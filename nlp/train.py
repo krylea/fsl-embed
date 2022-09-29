@@ -22,7 +22,7 @@ def compute_metrics(eval_pred):
 
 def train_model(model, tokenizer, dataset_name, training_args, metrics_fct=compute_metrics):
     dataset = load_dataset(dataset_name)
-    tokenized_dataset = dataset.map(get_tokenize_function(DATASET_KEYS[dataset_name]), batched=True)
+    tokenized_dataset = dataset.map(get_tokenize_function(DATASET[dataset_name]['keys']), batched=True)
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     trainer = Trainer(
@@ -38,7 +38,7 @@ def train_model(model, tokenizer, dataset_name, training_args, metrics_fct=compu
 
 
 def finetune_bert(dataset_name):
-    model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=3)
+    model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=DATASETS[dataset_name]['num_labels'])
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="epoch")
     
