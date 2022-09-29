@@ -22,14 +22,14 @@ def compute_metrics(eval_pred):
 
 def train_model(model, tokenizer, dataset_name, training_args, metrics_fct=compute_metrics):
     dataset = load_dataset(dataset_name)
-    tokenized_dataset = dataset.map(get_tokenize_function(DATASET[dataset_name]['keys']), batched=True)
+    tokenized_dataset = dataset.map(get_tokenize_function(DATASETS[dataset_name]['keys']), batched=True)
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=tokenized_dataset['train'],
-        eval_dataset=tokenized_dataset['validation'],
+        eval_dataset=tokenized_dataset['test'],
         compute_metrics=compute_metrics,
         data_collator=data_collator
     )
