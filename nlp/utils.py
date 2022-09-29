@@ -5,6 +5,7 @@ from tokenizers.normalizers import Lowercase, NFD, StripAccents
 from tokenizers.pre_tokenizers import Whitespace
 from tokenizers.models import WordLevel
 from tokenizers.trainers import WordLevelTrainer
+from tokenizers.processors import TemplateProcessing
 
 import datasets
 
@@ -30,6 +31,19 @@ def train_tokenizer(dataset, vocab_size, batch_size=1000, dataset_keys=["text"])
     )   
     tokenizer.train_from_iterator(batch_iterator(dataset, batch_size=batch_size, dataset_keys=dataset_keys), trainer=trainer, length=len(dataset))
     return tokenizer
+
+def count_vocab(dataset, tokenizer, dataset_keys=["text"]):
+    occurences = {}
+    for i, ex in enumerate(dataset):
+        for k in dataset_keys:
+            tokenized_example = tokenizer.encode(ex[k])
+            for idx in tokenized_example.ids:
+                if idx not in occurences:
+                    occurences[idx] = set()
+                occurences[idx].add(i)
+    return occurences
+
+
 
 
 #snli = datasets.load_dataset("snli", split="train")
