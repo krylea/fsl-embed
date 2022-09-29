@@ -21,7 +21,7 @@ def compute_metrics(eval_pred):
     return metric.compute(predictions=predictions, references=labels)
 
 def train_model(model, tokenizer, dataset_name, training_args, metrics_fct=compute_metrics):
-    dataset = datasets.load_dataset(dataset_name)
+    dataset = load_dataset(dataset_name)
     tokenized_dataset = dataset.map(get_tokenize_function(DATASET_KEYS[dataset_name]), batched=True)
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
