@@ -11,7 +11,7 @@ DATASETS = {
     'imdb': {'keys': ['text'], 'num_labels': 2}
 }
 
-def get_tokenize_function(dataset_keys):
+def get_tokenize_function(tokenizer, dataset_keys):
     return lambda examples: tokenizer(*[examples[k] for k in dataset_keys if k is not None], padding="max_length", truncation=True)
 
 metric = evaluate.load("accuracy")
@@ -22,7 +22,7 @@ def compute_metrics(eval_pred):
 
 def train_model(model, tokenizer, dataset_name, training_args, metrics_fct=compute_metrics):
     dataset = load_dataset(dataset_name)
-    tokenized_dataset = dataset.map(get_tokenize_function(DATASETS[dataset_name]['keys']), batched=True)
+    tokenized_dataset = dataset.map(get_tokenize_function(tokenizer, DATASETS[dataset_name]['keys']), batched=True)
     data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
     trainer = Trainer(
