@@ -37,13 +37,19 @@ def train_model(model, tokenizer, dataset_name, training_args, metrics_fct=compu
     trainer.train()
 
 
-def finetune_bert(dataset_name):
+def finetune_bert(dataset_name, max_steps=5000, eval_steps=500):
     model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=DATASETS[dataset_name]['num_labels'])
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="epoch")
+    training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="steps", save_strategy='no', eval_steps=eval_steps, max_steps=max_steps)
     
     train_model(model, tokenizer, dataset_name, training_args)
 
 
+def train_simple_model(dataset_name, max_steps=5000, eval_steps=500):
+    model = build_model(tokenizer.vocab_size, 512, 1024, 4, 16, 512, 0.1, 'gelu')
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="steps", save_strategy='no', eval_steps=eval_steps, max_steps=max_steps)
+    
+    train_model(model, tokenizer, dataset_name, training_args)
 
 

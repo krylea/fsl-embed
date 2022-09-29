@@ -43,6 +43,17 @@ def count_vocab(dataset, tokenizer, dataset_keys=["text"]):
                 occurences[idx].add(i)
     return occurences
 
+def word_correlations(dataset, tokenizer, dataset_keys=["text"]):
+    occurences= count_vocab(dataset, tokenizer, dataset_keys)
+    N_seqs = len(dataset)
+    N_words = len(tokenizer.get_vocab())
+    occ_table = torch.zeros(N_seqs, N_words, dtype=torch.int)
+    for i, occs_i in occurences.items():
+        occ_table[:,i][occs_i] = 1
+
+    labels = torch.tensor([x['label'] for x in dataset])
+    return occ_table, labels
+
 
 
 
