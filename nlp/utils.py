@@ -15,7 +15,8 @@ import torch
 DATASETS = {
     'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter':lambda ex: ex['label'] != -1},
     'mrpc': {'keys': ['sentence1', 'sentence2'], 'num_labels': 2},
-    'imdb': {'keys': ['text'], 'num_labels': 2}
+    'imdb': {'keys': ['text'], 'num_labels': 2},
+    'sst-2': {'keys': ['sentence'], 'num_labels': 2}
 }
 
 def batch_iterator(dataset, batch_size=1000, dataset_keys=["text"]):
@@ -63,7 +64,7 @@ def word_correlations(dataset, tokenizer, dataset_keys=["text"]):
     return occ_table, labels
 
 def tokenize_dataset(dataset, tokenizer, dataset_keys):
-    tokenize_fct = lambda examples: tokenizer.encode(*[examples[k] for k in dataset_keys if k is not None])
+    tokenize_fct = lambda examples: tokenizer.encode_batch(*[examples[k] for k in dataset_keys if k is not None])
     return dataset.map(tokenize_fct, batched=True)
 
 def filter_task_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], counts=None):
@@ -72,10 +73,12 @@ def filter_task_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"],
         counts = {k:len(v) for k,v in occs.items()}
     sorted_indices = sorted(counts, key=counts.get, reverse=True)
     top_words = sorted_indices[:n_words]
-    def _filter(tokenized_row):
-        for idx in tokenized_row.ids:
-            if idx not in top_words:
-                return False
+    def _filter(row):
+        for k in dataset_keys:
+            tokenized_row = tokenizer.encode(row[k])
+            for idx in tokenized_row.ids:
+                if idx not in top_words:
+                    return False
         return True
     return dataset.filter(_filter)
 
@@ -88,8 +91,7 @@ def process_dataset(dataset_name):
     tokenizer = train_tokenizer(dataset['train'], 20000, dataset_keys=dataset_keys)
     occs = count_vocab(dataset['train'], tokenizer, dataset_keys)
     counts = {k:len(v) for k,v in occs.items()}
-    tokenized_dataset = tokenize_dataset(dataset, tokenizer, dataset_keys)
-    return tokenized_dataset, tokenizer, counts
+    return dataset, tokenizer, counts
 
 
 
