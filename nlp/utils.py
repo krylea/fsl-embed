@@ -13,7 +13,7 @@ import datasets
 import torch
 
 DATASETS = {
-    'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter'=lambda ex: ex['label'] != -1},
+    'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter':lambda ex: ex['label'] != -1},
     'mrpc': {'keys': ['sentence1', 'sentence2'], 'num_labels': 2},
     'imdb': {'keys': ['text'], 'num_labels': 2}
 }
