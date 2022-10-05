@@ -26,7 +26,7 @@ def batch_iterator(dataset, batch_size=1000, dataset_keys=["text"]):
 def train_tokenizer(dataset, vocab_size, batch_size=1000, dataset_keys=["text"]):
     tokenizer = Tokenizer(WordLevel(unk_token="[UNK]"))
     tokenizer.normalizer = normalizers.Sequence([NFD(), Lowercase(), StripAccents()])
-    tokenizer.pre_tokenizer = pre_tokenizers.Sequence(Punctuation(), Whitespace())
+    tokenizer.pre_tokenizer = pre_tokenizers.Sequence([Punctuation(), Whitespace()])
     tokenizer.post_processor = TemplateProcessing(
         single="[CLS] $A [SEP]",
         pair="[CLS] $A [SEP] $B:1 [SEP]:1",
@@ -85,13 +85,10 @@ def process_dataset(dataset_name):
     if 'filter' in DATASETS[dataset_name]:
         dataset = dataset.filter(DATASETS[dataset_name]['filter'])
     dataset_keys = DATASETS[dataset_name]['keys']
-    
-    tokenizer = train_tokenizer(dataset, 20000, dataset_keys=dataset_keys)
-    occs = count_vocab(dataset, tokenizer, dataset_keys)
+    tokenizer = train_tokenizer(dataset['train'], 20000, dataset_keys=dataset_keys)
+    occs = count_vocab(dataset['train'], tokenizer, dataset_keys)
     counts = {k:len(v) for k,v in occs.items()}
-
     tokenized_dataset = tokenize_dataset(dataset, tokenizer, dataset_keys)
-
     return tokenized_dataset, tokenizer, counts
 
 
