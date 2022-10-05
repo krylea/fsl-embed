@@ -1,18 +1,31 @@
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer, DataCollatorWithPadding
+from transformers import AutoTokenizer, AutoModelForSequenceClassification, TrainingArguments, Trainer, DataCollatorWithPadding, PreTrainedTokenizerFast
 import evaluate
 import numpy as np
 
 from nlp.utils import train_tokenizer, build_model
 
 DATASETS = {
-    'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3},
+    'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter'=lambda ex: ex['label'] != -1},
     'mrpc': {'keys': ['sentence1', 'sentence2'], 'num_labels': 2},
     'imdb': {'keys': ['text'], 'num_labels': 2}
 }
 
 def get_tokenize_function(tokenizer, dataset_keys):
     return lambda examples: tokenizer(*[examples[k] for k in dataset_keys if k is not None], padding="max_length", truncation=True)
+
+def process_dataset(dataset_name):
+    dataset= load_dataset(dataset_name)
+    if 'filter' in DATASETS[dataset_name]:
+        dataset = dataset.filter(DATASETS[dataset_name]['filter'])
+    dataset_keys = DATASETS[dataset_name]['keys']
+    
+    tokenizer = train_tokenizer(dataset, 20000, dataset_keys=dataset_keys)
+    tokenized_dataset = dataset.map(get_tokenize_function(tokenizer, DATASETS[dataset_name]['keys']), batched=True)
+
+
+
+
 
 metric = evaluate.load("accuracy")
 def compute_metrics(eval_pred):
@@ -46,10 +59,57 @@ def finetune_bert(dataset_name, max_steps=5000, eval_steps=500):
 
 
 def train_simple_model(dataset_name, max_steps=5000, eval_steps=500):
-    model = build_model(tokenizer.vocab_size, 512, 1024, 4, 16, 512, 0.1, 'gelu')
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="steps", save_strategy='no', eval_steps=eval_steps, max_steps=max_steps)
-    
+    model = build_model(tokenizer.vocab_size, 512, 1024, 4, 16, 512, 0.1, 'gelu')
+    argdict = {
+        'output_dir': 'test_trainer',
+        'evaluation_strategy': 'steps', 
+        'save_strategy': 'no', 
+        'eval_steps': eval_steps, 
+        'max_steps': max_steps,
+        'per_device_train_batch_size': 16,
+        'per_device_eval_batch_size': 16,
+    }
+    training_args = TrainingArguments(**argdict)
     train_model(model, tokenizer, dataset_name, training_args)
+
+import copy
+def test_holdout(dataset, model, holdout_indices, train_steps, finetune_steps):
+    train_data, holdout_data = [], []
+    for i, x in enumerate(dataset):
+        holdout=False
+        for j in holdout_indices:
+            if j in x.ids:
+                holdout=True
+        if holdout:
+            holdout_data.append(x)
+        else:
+            train_data.append(x)
+    
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+    argdict = {
+        'output_dir': 'test_trainer',
+        'evaluation_strategy': 'no', 
+        'save_strategy': 'no', 
+        'max_steps': train_steps,
+        'per_device_train_batch_size': 16,
+        'per_device_eval_batch_size': 16,
+    }
+    training_args = TrainingArguments(**argdict)
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_data,
+        eval_dataset=None,
+        compute_metrics=compute_metrics,
+        data_collator=data_collator
+    )
+    trainer.train()
+
+
+
+
 
 

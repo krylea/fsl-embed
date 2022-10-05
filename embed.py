@@ -12,17 +12,25 @@ class SymbolicEmbeddingsGumbel(nn.Module):
         self.symbol_dim = symbol_dim
         self.mode = mode
 
+        if self.mode == 'concat':
+            self.dim = symbol_dim * pattern_length
+        elif self.mode == 'split':
+            self.dim = symbol_dim
+        else:
+            raise NotImplementedError("concat or split")
+
         self.tau = nn.Parameter(torch.Tensor([1.]))
 
         self.symbols = nn.Parameter(torch.empty(n_symbols, symbol_dim))
         self.pattern_map = nn.Parameter(torch.empty(n_categories, pattern_length, n_symbols))
 
-        init.normal_(self.symbols.weight)
-        init.normal_(self.pattern_map.weight)
+    def init_weights(self):
+        self.symbols.weight.uniform_(-sqrt(3), sqrt(3))
+        self.symbols.pattern_map.uniform_(-sqrt(3), sqrt(3))    #this may need a look
 
     def reinitialize(self, indices):
         with torch.no_grad():
-            init.normal_(self.pattern_map[indices])
+            init.uniform_(self.pattern_map[indices], -sqrt(3), sqrt(3)) #this may need a look
 
     def forward(self, inputs):
         energies = self.pattern_map[inputs]
