@@ -16,7 +16,7 @@ DATASETS = {
     'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter':lambda ex: ex['label'] != -1},
     'mrpc': {'keys': ['sentence1', 'sentence2'], 'num_labels': 2},
     'imdb': {'keys': ['text'], 'num_labels': 2},
-    'sst-2': {'keys': ['sentence'], 'num_labels': 2}
+    'sst2': {'keys': ['sentence'], 'num_labels': 2}
 }
 
 def batch_iterator(dataset, batch_size=1000, dataset_keys=["text"]):
