@@ -26,7 +26,7 @@ num_heads = 16
 max_length = 128
 dropout = 0.1
 activation_fct = 'gelu'
-use_sym=False
+use_sym=True
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)

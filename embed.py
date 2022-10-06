@@ -28,7 +28,7 @@ class SymbolicEmbeddingsGumbel(nn.Module):
         self.init_weights()
 
     def init_weights(self):
-        self.symbols.weight.uniform_(-sqrt(3), sqrt(3))
+        self.symbols.uniform_(-sqrt(3), sqrt(3))
         self.symbols.pattern_map.uniform_(-sqrt(3), sqrt(3))    #this may need a look
 
     def reinitialize(self, indices):
