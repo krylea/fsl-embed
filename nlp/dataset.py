@@ -54,7 +54,7 @@ def get_occurrences(dataset, tokenizer, dataset_keys=["text"]):
                 occurrences[idx].add(i)
     return occurrences
 
-def filter_task_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], counts=None):
+def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], counts=None):
     if counts == None:
         occs = get_occurrences(dataset, tokenizer, dataset_keys)
         counts = {k:len(v) for k,v in occs.items()}
