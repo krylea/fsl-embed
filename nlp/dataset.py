@@ -108,7 +108,7 @@ class NLPDataset():
         self.N = len(self.dataset)
         self.vocab_size = tokenizer.get_vocab_size()
         
-        self.tokenizer = PreTrainedTokenizerFast(tokenizer)
+        self.tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer)
         self.occs = {k:torch.tensor(list(v)) for k,v in occs.items()}
 
         
