@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
 
+from math import sqrt
 
 class SymbolicEmbeddingsGumbel(nn.Module):
     def __init__(self, n_categories, n_symbols, pattern_length, symbol_dim, mode='concat'):
