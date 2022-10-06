@@ -1,4 +1,4 @@
-from transformers import BertEmbeddings
+from transformers.models.bert.modeling_bert import BertEmbeddings, BertModel,BertForSequenceClassification
 
 class BertEmbeddingWrapper(BertEmbeddings):
     def __init__(self, config, symbolic_embeds):
