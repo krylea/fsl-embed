@@ -3,27 +3,42 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trai
 import evaluate
 import numpy as np
 
-from nlp.utils import train_tokenizer, build_model
+from nlp.dataset import NLPDataset
+from nlp.models import BertForSequenceClassificationWrapper
+from embed import SymbolicEmbeddingsGumbel
 
-DATASETS = {
-    'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter'=lambda ex: ex['label'] != -1},
-    'mrpc': {'keys': ['sentence1', 'sentence2'], 'num_labels': 2},
-    'imdb': {'keys': ['text'], 'num_labels': 2}
-}
+import argparse
 
-def get_tokenize_function(tokenizer, dataset_keys):
-    return lambda examples: tokenizer(*[examples[k] for k in dataset_keys if k is not None], padding="max_length", truncation=True)
+parser = argparse.ArgumentParser()
+parser.add_argument('run_name', type=str)
+parser.add_argument('--use_sym', action='store_true')
 
-def process_dataset(dataset_name):
-    dataset= load_dataset(dataset_name)
-    if 'filter' in DATASETS[dataset_name]:
-        dataset = dataset.filter(DATASETS[dataset_name]['filter'])
-    dataset_keys = DATASETS[dataset_name]['keys']
-    
-    tokenizer = train_tokenizer(dataset, 20000, dataset_keys=dataset_keys)
-    tokenized_dataset = dataset.map(get_tokenize_function(tokenizer, DATASETS[dataset_name]['keys']), batched=True)
+args = parser.parse_args()
 
+voc_size = 20000
+top_words = 2000
+n_symbols = 500
+pattern_length = 8
+latent_size = 512
+hidden_size = 1024
+num_layers = 4
+num_heads = 16
+max_length = 128
+dropout = 0.1
+activation_fct = 'gelu'
 
+def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
+    config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
+    if symbolic_embeds is None:
+        model = BertForSequenceClassification(config)
+    else:
+        model = BertForSequenceClassificationWrapper(config, symbolic_embeds)
+    return model
+
+train_dataset, val_dataset, test_dataset = NLPDataset.process_splits("sst2", voc_size, top_words)
+
+sym = SymbolicEmbeddingsGumbel(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length) if args.use_sym else None
+model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, sym)
 
 
 
@@ -33,83 +48,17 @@ def compute_metrics(eval_pred):
     predictions = np.argmax(logits, axis=-1)
     return metric.compute(predictions=predictions, references=labels)
 
-def train_model(model, tokenizer, dataset_name, training_args, metrics_fct=compute_metrics):
-    dataset = load_dataset(dataset_name)
-    tokenized_dataset = dataset.map(get_tokenize_function(tokenizer, DATASETS[dataset_name]['keys']), batched=True)
-    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=tokenized_dataset['train'],
-        eval_dataset=tokenized_dataset['test'],
-        compute_metrics=compute_metrics,
-        data_collator=data_collator
-    )
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
 
-    trainer.train()
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=val_dataset,
+    compute_metrics=compute_metrics,
+    data_collator=data_collator
+)
 
-
-def finetune_bert(dataset_name, max_steps=5000, eval_steps=500):
-    model = AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=DATASETS[dataset_name]['num_labels'])
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="steps", save_strategy='no', eval_steps=eval_steps, max_steps=max_steps)
-    
-    train_model(model, tokenizer, dataset_name, training_args)
-
-
-def train_simple_model(dataset_name, max_steps=5000, eval_steps=500):
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
-    model = build_model(tokenizer.vocab_size, 512, 1024, 4, 16, 512, 0.1, 'gelu')
-    argdict = {
-        'output_dir': 'test_trainer',
-        'evaluation_strategy': 'steps', 
-        'save_strategy': 'no', 
-        'eval_steps': eval_steps, 
-        'max_steps': max_steps,
-        'per_device_train_batch_size': 16,
-        'per_device_eval_batch_size': 16,
-    }
-    training_args = TrainingArguments(**argdict)
-    train_model(model, tokenizer, dataset_name, training_args)
-
-import copy
-def test_holdout(dataset, model, holdout_indices, train_steps, finetune_steps):
-    train_data, holdout_data = [], []
-    for i, x in enumerate(dataset):
-        holdout=False
-        for j in holdout_indices:
-            if j in x.ids:
-                holdout=True
-        if holdout:
-            holdout_data.append(x)
-        else:
-            train_data.append(x)
-    
-    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
-
-    argdict = {
-        'output_dir': 'test_trainer',
-        'evaluation_strategy': 'no', 
-        'save_strategy': 'no', 
-        'max_steps': train_steps,
-        'per_device_train_batch_size': 16,
-        'per_device_eval_batch_size': 16,
-    }
-    training_args = TrainingArguments(**argdict)
-
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_data,
-        eval_dataset=None,
-        compute_metrics=compute_metrics,
-        data_collator=data_collator
-    )
-    trainer.train()
-
-
-
-
-
+trainer.train()
 
