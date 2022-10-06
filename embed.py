@@ -25,6 +25,8 @@ class SymbolicEmbeddingsGumbel(nn.Module):
         self.symbols = nn.Parameter(torch.empty(n_symbols, symbol_dim))
         self.pattern_map = nn.Parameter(torch.empty(n_categories, pattern_length, n_symbols))
 
+        self.init_weights()
+
     def init_weights(self):
         self.symbols.weight.uniform_(-sqrt(3), sqrt(3))
         self.symbols.pattern_map.uniform_(-sqrt(3), sqrt(3))    #this may need a look
