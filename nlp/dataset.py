@@ -99,7 +99,7 @@ class NLPDataset():
         
         return [cls(dataset_name, dataset[split], tokenizer, occs) for split in dataset.keys()]
 
-    def __init__(self, dataset_name, dataset, tokenizer, occs, dataset_keys):
+    def __init__(self, dataset_name, dataset, tokenizer, occs):
         self.dataset_name = dataset_name
         self.dataset_keys = DATASETS[dataset_name]['keys']
         self.num_labels = DATASETS[dataset_name]['num_labels']
