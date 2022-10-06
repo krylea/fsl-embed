@@ -21,6 +21,13 @@ DATASETS = {
     'sst2': {'keys': ['sentence'], 'num_labels': 2}
 }
 
+TOKENS = {
+    'pad_token': "[PAD]",
+    'cls_token': "[CLS]",
+    'sep_token': "[SEP]",
+    'unk_token': "[UNK]",
+}
+
 def batch_iterator(dataset, batch_size=1000, dataset_keys=["text"]):
     for i in range(0, len(dataset), batch_size):
         yield [x for k in dataset_keys for x in dataset[i : i + batch_size][k]]
@@ -108,7 +115,7 @@ class NLPDataset():
         self.N = len(self.dataset)
         self.vocab_size = tokenizer.get_vocab_size()
         
-        self.tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer)
+        self.tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
         self.occs = {k:torch.tensor(list(v)) for k,v in occs.items()}
 
         
