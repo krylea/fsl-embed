@@ -31,7 +31,7 @@ class SymbolicEmbeddingsGumbel(nn.Module):
     def init_weights(self):
         with torch.no_grad():
             self.symbols.uniform_(-sqrt(3), sqrt(3))
-            self.symbols.pattern_map.uniform_(-sqrt(3), sqrt(3))    #this may need a look
+            self.pattern_map.uniform_(-sqrt(3), sqrt(3))    #this may need a look
 
     def reinitialize(self, indices):
         with torch.no_grad():
