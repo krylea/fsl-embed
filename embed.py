@@ -85,12 +85,15 @@ class SymbolicEmbeddingsVQ(nn.Module):
         with torch.no_grad():
             init.normal_(self.latents[indices])
 
-    def update_pattern(self):
-        self.pattern = knn(self.latents, self.symbols.unsqueeze(0), 1)
+    def update_pattern(self, indices=None):
+        if indices is not None:
+            self.pattern[indices] = knn(self.latents[indices], self.symbols.unsqueeze(0), 1)
+        else:
+            self.pattern = knn(self.latents, self.symbols.unsqueeze(0), 1)
         self.symbol_loss_buffer = torch.tensor([0])
 
     def forward(self, inputs):
-        self.update_pattern()
+        self.update_pattern(indices=inputs.unique())
 
         latent_embeds = self.latents[inputs]
         discrete_embeds = self.symbols[self.pattern[inputs]]
