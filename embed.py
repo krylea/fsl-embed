@@ -70,7 +70,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
         self.latents = nn.Parameter(torch.empty(n_categories, pattern_length, symbol_dim))
         self.pattern = None
 
-        self.register_buffer("symbol_loss_buffer", torch.zeros)
+        self.register_buffer("symbol_loss_buffer", torch.tensor([0]))
 
         init.normal_(self.symbols.weight)
         init.normal_(self.latents.weight)

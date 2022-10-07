@@ -47,6 +47,7 @@ if use_sym == 'gumbel':
 elif use_sym == 'vq':
     sym = SymbolicEmbeddingsVQ(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
     trainer_cls=VQTrainer
+
 model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, sym)
 
 
