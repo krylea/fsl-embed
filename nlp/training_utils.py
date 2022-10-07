@@ -10,6 +10,7 @@ class VQTrainer(Trainer):
             loss = super(VQTrainer, self).compute_loss(model, inputs, return_outputs)
         
         loss += model.bert.embeddings.word_embeddings.symbol_loss_buffer
+        loss += model.bert.embeddings.word_embeddings.latent_loss_buffer
 
         if return_outputs:
             return loss, outputs

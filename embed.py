@@ -56,13 +56,14 @@ class SymbolicEmbeddingsGumbel(nn.Module):
 
 
 class SymbolicEmbeddingsVQ(nn.Module):
-    def __init__(self, n_categories, n_symbols, pattern_length, symbol_dim, mode='concat'):
+    def __init__(self, n_categories, n_symbols, pattern_length, symbol_dim, beta, mode='concat'):
         super().__init__()
         self.n_categories = n_categories
         self.n_symbols = n_symbols
         self.pattern_length = pattern_length
         self.symbol_dim = symbol_dim
         self.mode = mode
+        self.beta = beta
 
         self.tau = nn.Parameter(torch.Tensor([1.]))
 
@@ -71,6 +72,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
 
         self.register_buffer("pattern", torch.ones(n_categories, pattern_length, dtype=torch.long) *-1)
         self.register_buffer("symbol_loss_buffer", torch.zeros([]))
+        self.register_buffer("latent_loss_buffer", torch.zeros([]))
 
         self.init_weights()
 
@@ -91,6 +93,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
         else:
             self.pattern = knn(self.latents, self.symbols.unsqueeze(0), 1).squeeze(-1)
         self.symbol_loss_buffer = torch.zeros([]).to(self.symbol_loss_buffer.device)
+        self.latent_loss_buffer = torch.zeros([]).to(self.latent_loss_buffer.device)
 
     def forward(self, inputs):
         self.update_pattern(indices=inputs.unique())
@@ -101,6 +104,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
 
         if self.training:
             self.symbol_loss_buffer += (discrete_embeds - latent_embeds.detach()).pow(2).sum(dim=-1).mean()
+            self.latent_loss_buffer += self.beta * (discrete_embeds.detach() - latent_embeds).pow(2).sum(dim=-1).mean()
 
         if self.mode == 'concat':
             embeds = embeds.view(*inputs.size(), -1)

@@ -6,7 +6,7 @@ import numpy as np
 from nlp.dataset import NLPDataset
 from nlp.models import BertForSequenceClassificationWrapper
 from nlp.training_utils import VQTrainer
-from embed import SymbolicEmbeddingsGumbel
+from embed import SymbolicEmbeddingsGumbel, SymbolicEmbeddingsVQ
 
 import argparse
 
@@ -28,6 +28,7 @@ max_length = 128
 dropout = 0.1
 activation_fct = 'gelu'
 use_sym = 'vq'
+beta=1.
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
@@ -45,7 +46,7 @@ trainer_cls=Trainer
 if use_sym == 'gumbel':
     sym = SymbolicEmbeddingsGumbel(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
 elif use_sym == 'vq':
-    sym = SymbolicEmbeddingsVQ(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
+    sym = SymbolicEmbeddingsVQ(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length, beta)
     trainer_cls=VQTrainer
 
 model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, sym)
