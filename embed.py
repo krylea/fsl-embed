@@ -72,7 +72,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
 
         self.register_buffer("symbol_loss_buffer", torch.tensor([0]))
 
-        self.init_weights
+        self.init_weights()
 
         self.update_pattern()
 
