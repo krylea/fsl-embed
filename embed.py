@@ -74,7 +74,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
 
         self.init_weights()
 
-        self.update_pattern()
+        #self.update_pattern()
 
     def init_weights(self):
         with torch.no_grad():
@@ -87,7 +87,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
 
     def update_pattern(self):
         self.pattern = knn(self.latents, self.symbols.unsqueeze(0), 1)
-        self.symbol_buffer = torch.tensor([0])
+        self.symbol_loss_buffer = torch.tensor([0])
 
     def forward(self, inputs):
         self.update_pattern()
