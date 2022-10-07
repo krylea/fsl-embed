@@ -5,6 +5,7 @@ import numpy as np
 
 from nlp.dataset import NLPDataset
 from nlp.models import BertForSequenceClassificationWrapper
+from nlp.training_utils import VQTrainer
 from embed import SymbolicEmbeddingsGumbel
 
 import argparse
@@ -17,8 +18,8 @@ import argparse
 
 voc_size = 20000
 top_words = 2000
-n_symbols = 500
-pattern_length = 8
+n_symbols = 2000
+pattern_length = 1
 latent_size = 512
 hidden_size = 1024
 num_layers = 4
@@ -26,7 +27,7 @@ num_heads = 16
 max_length = 128
 dropout = 0.1
 activation_fct = 'gelu'
-use_sym=True
+use_sym = 'vq'
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
@@ -39,9 +40,14 @@ def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_hea
 train_dataset, val_dataset, test_dataset = NLPDataset.process_splits("sst2", voc_size, top_words)
 tokenizer = train_dataset.tokenizer
 
-sym = SymbolicEmbeddingsGumbel(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length) if use_sym else None
+sym = None
+trainer_cls=Trainer
+if use_sym == 'gumbel':
+    sym = SymbolicEmbeddingsGumbel(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
+elif use_sym == 'vq':
+    sym = SymbolicEmbeddingsVQ(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
+    trainer_cls=VQTrainer
 model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, sym)
-
 
 
 metric = evaluate.load("accuracy")
@@ -54,7 +60,7 @@ def compute_metrics(eval_pred):
 data_collator = DataCollatorWithPadding(tokenizer=train_dataset.tokenizer)
 training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="epoch", save_strategy='no')
 
-trainer = Trainer(
+trainer = trainer_cls(
     model=model,
     args=training_args,
     train_dataset=train_dataset,

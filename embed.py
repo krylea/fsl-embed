@@ -5,6 +5,8 @@ import torch.nn.functional as F
 
 from math import sqrt
 
+from utils import knn
+
 class SymbolicEmbeddingsGumbel(nn.Module):
     def __init__(self, n_categories, n_symbols, pattern_length, symbol_dim, mode='concat'):
         super().__init__()
@@ -66,19 +68,37 @@ class SymbolicEmbeddingsVQ(nn.Module):
 
         self.symbols = nn.Parameter(torch.empty(n_symbols, symbol_dim))
         self.latents = nn.Parameter(torch.empty(n_categories, pattern_length, symbol_dim))
+        self.pattern = None
+
+        self.register_buffer("symbol_loss_buffer", torch.zeros)
 
         init.normal_(self.symbols.weight)
         init.normal_(self.latents.weight)
+
+        self.update_pattern()
+
+    def init_weights(self):
+        with torch.no_grad():
+            self.symbols.uniform_(-sqrt(3), sqrt(3))
+            self.latents.uniform_(-sqrt(3), sqrt(3))    #this may need a look
 
     def reinitialize(self, indices):
         with torch.no_grad():
             init.normal_(self.latents[indices])
 
-    def forward(self, inputs):
-        energies = self.pattern_map[inputs]
-        weights = F.gumbel_softmax(energies, hard=True, tau=self.tau)
+    def update_pattern(self):
+        self.pattern = knn(self.latents, self.symbols.unsqueeze(0), 1)
+        self.symbol_buffer = torch.tensor([0])
 
-        embeds = torch.matmul(weights, self.symbols)
+    def forward(self, inputs):
+        self.update_pattern()
+
+        latent_embeds = self.latents[inputs]
+        discrete_embeds = self.symbols[self.pattern[inputs]]
+        embeds = discrete_embeds.detach() + latent_embeds - latent_embeds.detach()
+
+        if self.training:
+            self.symbol_loss_buffer += (discrete_embeds - latent_embeds.detach()).pow(2).sum(dim=-1).mean()
 
         if self.mode == 'concat':
             embeds = embeds.view(*inputs.size(), -1)

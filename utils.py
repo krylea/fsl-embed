@@ -18,3 +18,14 @@ def gumbel_softmax(logits, tau=1, hard=True):
         # Reparametrization trick.
         ret = y_soft
     return ret
+
+
+
+def knn(X, Y, k):
+    # X * x N x d
+    # Y * x M x d
+    dists = (X.unsqueeze(-2) - Y.unsqueeze(-3)).norm(dim=-1)    # * x N x M
+    _, indices = dists.topk(k, dim=-1)  # * x N x k
+    return indices
+
+    
