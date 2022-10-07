@@ -19,7 +19,7 @@ import argparse
 voc_size = 20000
 top_words = 2000
 n_symbols = 2000
-pattern_length = 1
+pattern_length = 8
 latent_size = 512
 hidden_size = 1024
 num_layers = 4
@@ -29,6 +29,8 @@ dropout = 0.1
 activation_fct = 'gelu'
 use_sym = 'vq'
 beta=1.
+lr=1e-3
+num_train_epochs=6.0
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
@@ -60,7 +62,7 @@ def compute_metrics(eval_pred):
 
 
 data_collator = DataCollatorWithPadding(tokenizer=train_dataset.tokenizer)
-training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="epoch", save_strategy='no')
+training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="epoch", save_strategy='no', learning_rate=lr, num_train_epochs=num_train_epochs)
 
 trainer = trainer_cls(
     model=model,

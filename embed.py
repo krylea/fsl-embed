@@ -103,8 +103,8 @@ class SymbolicEmbeddingsVQ(nn.Module):
         embeds = discrete_embeds.detach() + latent_embeds - latent_embeds.detach()
 
         if self.training:
-            self.symbol_loss_buffer += (discrete_embeds - latent_embeds.detach()).pow(2).sum(dim=-1).mean()
-            self.latent_loss_buffer += self.beta * (discrete_embeds.detach() - latent_embeds).pow(2).sum(dim=-1).mean()
+            self.symbol_loss_buffer += (discrete_embeds - latent_embeds.detach()).pow(2).mean()
+            self.latent_loss_buffer += self.beta * (discrete_embeds.detach() - latent_embeds).pow(2).mean()
 
         if self.mode == 'concat':
             embeds = embeds.view(*inputs.size(), -1)
