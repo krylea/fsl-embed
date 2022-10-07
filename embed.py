@@ -70,7 +70,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
         self.latents = nn.Parameter(torch.empty(n_categories, pattern_length, symbol_dim))
 
         self.register_buffer("pattern", torch.ones(n_categories, pattern_length, dtype=torch.long) *-1)
-        self.register_buffer("symbol_loss_buffer", torch.tensor([0.]))
+        self.register_buffer("symbol_loss_buffer", torch.zeros([]))
 
         self.init_weights()
 
@@ -90,7 +90,7 @@ class SymbolicEmbeddingsVQ(nn.Module):
             self.pattern[indices] = knn(self.latents[indices], self.symbols.unsqueeze(0), 1).squeeze(-1)
         else:
             self.pattern = knn(self.latents, self.symbols.unsqueeze(0), 1).squeeze(-1)
-        self.symbol_loss_buffer = torch.tensor([0.]).to(self.symbol_loss_buffer.device)
+        self.symbol_loss_buffer = torch.zeros([]).to(self.symbol_loss_buffer.device)
 
     def forward(self, inputs):
         self.update_pattern(indices=inputs.unique())
