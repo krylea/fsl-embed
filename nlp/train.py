@@ -41,7 +41,7 @@ def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_hea
         model = BertForSequenceClassificationWrapper(config, symbolic_embeds)
     return model
 
-train_dataset = NLPDataset.process_dataset("sst2", voc_size, top_words)
+dataset = NLPDataset.process_dataset("sst2", voc_size, top_words)
 tokenizer = train_dataset.tokenizer
 
 sym = None
@@ -72,6 +72,8 @@ training_args = TrainingArguments(
     per_device_train_batch_size=batch_size,
     per_device_eval_batch_size=batch_size
 )
+
+train_dataset, test_dataset = dataset.split()
 
 trainer = trainer_cls(
     model=model,

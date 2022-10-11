@@ -123,13 +123,13 @@ class NLPDataset():
 
     def partition(self, indices):
         subset = self.dataset.select(self.index_map[indices].tolist())
-        return NLPDataset(self.dataset_name, subset, self.tokenizer, self.occs)
+        return NLPDataset(self.dataset_name, subset, self.tokenizer, self.vocab_size, self.occs)
         #ood_indices = torch.tensor([x for x in self.dataset['idx'] if x not in indices])
         #ood_dataset = self.dataset.select(self.index_map[ood_indices].tolist())
 
     def split(self, test_frac=0.1):
         split_dataset = self.dataset.train_test_split(test_size=test_frac)
-        return [NLPDataset(self.dataset_name, split_dataset[split], self.tokenizer, self.occs) for split in split_dataset]
+        return [NLPDataset(self.dataset_name, split_dataset[split], self.tokenizer, self.vocab_size, self.occs) for split in split_dataset]
 
 
         
