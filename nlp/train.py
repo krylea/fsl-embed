@@ -27,7 +27,7 @@ num_heads = 16
 max_length = 128
 dropout = 0.1
 activation_fct = 'gelu'
-use_sym = 'gumbel'
+use_sym = 'none'
 beta=1.
 lr=5e-5
 num_train_epochs=6.0
@@ -68,7 +68,7 @@ def train(model, dataset, train_steps, eval_every=500, batch_size=32):
     training_args = TrainingArguments(
         output_dir="test_trainer", 
         evaluation_strategy="steps", 
-        eval_steps=eval_every
+        eval_steps=eval_every,
         save_strategy='no', 
         learning_rate=lr, 
         max_steps=train_steps,
