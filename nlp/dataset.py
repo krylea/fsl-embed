@@ -116,12 +116,12 @@ class NLPDataset():
         return self.dataset[i]
 
     def pivot(self, word_indices):
-        id_indices = (occs[:,word_indices].sum(dim=1) == 0).nonzero().squeeze(1)
+        id_indices = (self.occs[:,word_indices].sum(dim=1) == 0).nonzero().squeeze(1)
         #ood_indices = (occs[:,word_indices].sum(dim=1)).nonzero().squeeze(1)
 
         ood_indices_by_word = {}
         for idx in word_indices:
-            ood_indices_by_word[idx]= occs[:,idx].nonzero().squeeze(1)
+            ood_indices_by_word[idx]= self.occs[:,idx].nonzero().squeeze(1)
 
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
 
