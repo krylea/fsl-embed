@@ -29,7 +29,9 @@ def knn(X, Y, k):
     return indices
 
 
-def inverse_permutation(perm, max_size=-1):
+def inverse_permutation(perm):
+    if not isinstance(perm, torch.Tensor):
+        perm = torch.tensor(perm)
     max_size = perm.max()
     inv = torch.ones(max_size+1, dtype=perm.dtype) * -1
     inv[perm] = torch.arange(perm.size(0), device=perm.device)
