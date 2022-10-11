@@ -124,7 +124,7 @@ class NLPDataset():
 
         ood_indices_by_word = {}
         for idx in word_indices:
-            ood_indices_by_word[idx]= self.occs[:,idx].nonzero().squeeze(1)
+            ood_indices_by_word[idx.item()]= self.occs[:,idx].nonzero().squeeze(1)
 
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
 

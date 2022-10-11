@@ -64,7 +64,7 @@ def compute_metrics(eval_pred):
 
 
 
-def train(model, dataset, train_steps, eval_every=500, batch_size=32):
+def train(model, dataset, train_steps, eval_every=500, batch_size=32, test_frac=0.1):
     data_collator = DataCollatorWithPadding(tokenizer=dataset.tokenizer)
     training_args = TrainingArguments(
         output_dir="test_trainer", 
@@ -76,9 +76,7 @@ def train(model, dataset, train_steps, eval_every=500, batch_size=32):
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size
     )
-
-    train_dataset, test_dataset = dataset.split()
-
+    train_dataset, test_dataset = dataset.split(test_frac=test_frac)
     trainer = trainer_cls(
         model=model,
         args=training_args,
@@ -87,22 +85,27 @@ def train(model, dataset, train_steps, eval_every=500, batch_size=32):
         compute_metrics=compute_metrics,
         data_collator=data_collator
     )
-
     trainer.train()
-
     acc = trainer.evaluate()['eval_accuracy']
     return acc
 
 def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs):
     id_dataset, ood_datasets = dataset.pivot(holdout_words)
-
     train_acc = train(model, id_dataset, train_steps, **kwargs)
-
+    accs = {}
     for word_idx, word_dataset in ood_datasets.items():
         finetune_model = copy.deepcopy(model)
-        eval_acc = train(finetune_model, word_dataset, finetune_steps, **kwargs)
-        print("%s Accuracy: %f" % (dataset.tokenizer.vocab[word_idx], eval_acc))
+        eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=125, test_frac=0.3, **kwargs)
+        print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], eval_acc))
         del finetune_model
+        accs[word_idx] = eval_acc
+    return accs
 
 
+occs = dataset.occs
+counts = occs.sum(dim=0)
+_, sorted_indices = counts.sort(descending=True)
+ordered_inds = [37, 106, 87, 98, 55]
+holdout_inds = sorted_indices[ordered_inds]
+accs = fewshot(model, dataset, holdout_inds, 2000, 500)
 
