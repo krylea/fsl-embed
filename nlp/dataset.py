@@ -110,7 +110,7 @@ class NLPDataset():
         self.index_map = inverse_permutation(self.dataset['idx'])
 
     def _index_map(self, indices):
-        return [self.index_map[x] if x < self.N and self.index_map[x] >= 0]
+        return [self.index_map[x] if x < self.N and self.index_map[x] >= 0 for x in indices]
 
     def __len__(self):
         return self.N

@@ -105,10 +105,3 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
 
 
 
-occs = dataset.occs
-counts = occs.sum(dim=0)
-_, sorted_indices = counts.sort(descending=True)
-ordered_inds = [37, 106, 259, 551, 768]
-holdout_inds = sorted_indices[ordered_inds]
-fewshot(model, dataset, holdout_inds, 2000, 500)
-
