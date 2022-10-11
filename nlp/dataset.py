@@ -92,7 +92,7 @@ class NLPDataset():
         if top_words > 0:
             dataset = filter_by_top_words(dataset, tokenizer, top_words, dataset_keys, occs)
         final_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
-        tokenized_dataset = tokenize_dataset(dataset, tokenizer, dataset_keys)
+        tokenized_dataset = tokenize_dataset(dataset, final_tokenizer, dataset_keys)
         
         return cls(dataset_name, tokenized_dataset, final_tokenizer, occs)
 

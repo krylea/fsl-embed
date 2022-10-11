@@ -84,5 +84,3 @@ trainer = trainer_cls(
 
 trainer.train()
 
-
-#def train(model, dataset, steps)
