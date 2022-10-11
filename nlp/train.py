@@ -93,12 +93,16 @@ def train(model, dataset, train_steps, eval_every=500, batch_size=32):
     return acc
 
 def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs):
-    id_dataset, ood_dataset = dataset.pivot(holdout_words)
+    id_dataset, ood_datasets = dataset.pivot(holdout_words)
 
     train_acc = train(model, id_dataset, train_steps, **kwargs)
-    eval_acc = train(model, ood_dataset, finetune_steps, **kwargs)
 
-    return eval_acc
+    for word_idx, word_dataset in ood_datasets.items():
+        finetune_model = copy.deepcopy(model)
+        eval_acc = train(finetune_model, word_dataset, finetune_steps, **kwargs)
+        print("%s Accuracy: %f" % (dataset.tokenizer.vocab[word_idx], eval_acc))
+        del finetune_model
+
 
 
 
