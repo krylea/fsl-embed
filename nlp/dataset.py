@@ -71,38 +71,31 @@ def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], occs
     #top_words = sorted_indices[:n_words]
     bottom_words = sorted_indices[n_words:]
     id_indices = (occs[:,bottom_words].sum(dim=1) == 0).nonzero().squeeze(1)
-    return [dataset[split].select(id_indices.tolist()) for split in dataset.keys()]
+    return dataset[split].select(id_indices.tolist())
 
-
-def process_dataset(dataset_name, vocab_size, top_words):
-    dataset= datasets.load_dataset(dataset_name)
-    if 'filter' in DATASETS[dataset_name]:
-        dataset = dataset.filter(DATASETS[dataset_name]['filter'])
-    dataset_keys = DATASETS[dataset_name]['keys']
-    tokenizer = train_tokenizer(dataset['train'], vocab_size, dataset_keys=dataset_keys)
-    occs = get_occurrences(dataset['train'], tokenizer, dataset_keys)
-    counts = {k:len(v) for k,v in occs.items()}
-    if top_words > 0:
-        dataset = filter_by_top_words(dataset, tokenizer, top_words, dataset_keys, counts)
-    
-    return dataset, tokenizer, occs
-
+def tokenize_dataset(dataset, tokenizer, dataset_keys):
+    def get_tokenize_function(tokenizer, dataset_keys):
+        return lambda examples: tokenizer(*[examples[k] for k in dataset_keys if k is not None], padding="max_length", truncation=True)
+    tokenize_fct = get_tokenize_function(tokenizer, dataset_keys)
+    tokenized_dataset = dataset.map(tokenize_fct, batched=True)
+    return tokenized_dataset
 
 class NLPDataset():
     @classmethod
-    def process_splits(cls, dataset_name, vocab_size, top_words):
-        dataset= datasets.load_dataset(dataset_name)
+    def process_dataset(cls, dataset_name, vocab_size, top_words):
+        dataset= datasets.load_dataset(dataset_name)['train']
         if 'filter' in DATASETS[dataset_name]:
             dataset = dataset.filter(DATASETS[dataset_name]['filter'])
         dataset_keys = DATASETS[dataset_name]['keys']
-        tokenizer = train_tokenizer(dataset['train'], vocab_size, dataset_keys=dataset_keys)
-        occs = get_occurrences(dataset['train'], tokenizer, dataset_keys)
+        tokenizer = train_tokenizer(dataset, vocab_size, dataset_keys=dataset_keys)
+        occs = get_occurrences(dataset, tokenizer, dataset_keys)
         if top_words > 0:
             dataset = filter_by_top_words(dataset, tokenizer, top_words, dataset_keys, occs)
-        
-        return [cls(dataset_name, dataset[split], tokenizer, occs) for split in dataset.keys()]
+        tokenized_dataset = tokenize_dataset(dataset, tokenizer, dataset_keys)
+        final_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
+        return cls(dataset_name, tokenized_dataset, final_tokenizer, occs)
 
-    def __init__(self, dataset_name, dataset, tokenizer, occs, tokenized_dataset=None):
+    def __init__(self, dataset_name, dataset, tokenizer, occs):
         self.dataset_name = dataset_name
         self.dataset_keys = DATASETS[dataset_name]['keys']
         self.num_labels = DATASETS[dataset_name]['num_labels']
@@ -111,18 +104,9 @@ class NLPDataset():
         self.N = len(self.dataset)
         self.vocab_size = tokenizer.get_vocab_size()
         
-        self.tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
+        self.tokenizer = tokenizer
         self.occs = occs
         self.index_map = inverse_permutation(self.dataset['idx'])
-        
-        self.tokenized_dataset = self._tokenize_dataset() if tokenized_dataset is None else tokenized_dataset
-
-    def _tokenize_dataset(self):
-        def get_tokenize_function(tokenizer, dataset_keys):
-            return lambda examples: tokenizer(*[examples[k] for k in dataset_keys if k is not None], padding="max_length", truncation=True)
-        tokenize_fct = get_tokenize_function(self.tokenizer, self.dataset_keys)
-        tokenized_dataset = self.dataset.map(tokenize_fct, batched=True)
-        return tokenized_dataset
 
     def __len__(self):
         return self.N
@@ -138,10 +122,15 @@ class NLPDataset():
 
     def partition(self, indices):
         subset = self.dataset.select(self.index_map[indices].tolist())
-        tokenized_subset = self.tokenized_dataset.select(self.index_map[indices].tolist())
-        return NLPDataset(self.dataset_name, subset, self.tokenizer, self.occs, tokenized_subset)
+        return NLPDataset(self.dataset_name, subset, self.tokenizer, self.occs)
         #ood_indices = torch.tensor([x for x in self.dataset['idx'] if x not in indices])
         #ood_dataset = self.dataset.select(self.index_map[ood_indices].tolist())
+
+    def split(self, test_frac=0.1):
+        split_dataset = self.dataset.train_test_split(test_size=test_frac)
+        return [NLPDataset(self.dataset_name, split_dataset[split], self.tokenizer, self.occs) for split in split_dataset]
+
+
         
 
 
