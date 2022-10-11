@@ -113,7 +113,7 @@ class NLPDataset():
         return self.N
 
     def __getitem__(self, i):
-        return self.tokenized_dataset[i]
+        return self.dataset[i]
 
     def pivot(self, word_indices):
         id_indices = (occs[:,word_indices].sum(dim=1) == 0).nonzero().squeeze(1)

@@ -42,7 +42,7 @@ def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_hea
     return model
 
 dataset = NLPDataset.process_dataset("sst2", voc_size, top_words)
-tokenizer = train_dataset.tokenizer
+tokenizer = dataset.tokenizer
 
 sym = None
 trainer_cls=Trainer
@@ -62,7 +62,7 @@ def compute_metrics(eval_pred):
     return metric.compute(predictions=predictions, references=labels)
 
 
-data_collator = DataCollatorWithPadding(tokenizer=train_dataset.tokenizer)
+data_collator = DataCollatorWithPadding(tokenizer=dataset.tokenizer)
 training_args = TrainingArguments(
     output_dir="test_trainer", 
     evaluation_strategy="epoch", 
@@ -79,7 +79,7 @@ trainer = trainer_cls(
     model=model,
     args=training_args,
     train_dataset=train_dataset,
-    eval_dataset=val_dataset,
+    eval_dataset=test_dataset,
     compute_metrics=compute_metrics,
     data_collator=data_collator
 )
