@@ -71,7 +71,7 @@ def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], occs
     #top_words = sorted_indices[:n_words]
     bottom_words = sorted_indices[n_words:]
     id_indices = (occs[:,bottom_words].sum(dim=1) == 0).nonzero().squeeze(1)
-    return dataset[split].select(id_indices.tolist())
+    return dataset.select(id_indices.tolist())
 
 def tokenize_dataset(dataset, tokenizer, dataset_keys):
     def get_tokenize_function(tokenizer, dataset_keys):
