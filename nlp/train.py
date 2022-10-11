@@ -47,9 +47,9 @@ tokenizer = dataset.tokenizer
 sym = None
 trainer_cls=Trainer
 if use_sym == 'gumbel':
-    sym = SymbolicEmbeddingsGumbel(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
+    sym = SymbolicEmbeddingsGumbel(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
 elif use_sym == 'vq':
-    sym = SymbolicEmbeddingsVQ(train_dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length, beta)
+    sym = SymbolicEmbeddingsVQ(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length, beta)
     trainer_cls=VQTrainer
 
 model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, sym)
@@ -62,27 +62,44 @@ def compute_metrics(eval_pred):
     return metric.compute(predictions=predictions, references=labels)
 
 
-data_collator = DataCollatorWithPadding(tokenizer=dataset.tokenizer)
-training_args = TrainingArguments(
-    output_dir="test_trainer", 
-    evaluation_strategy="epoch", 
-    save_strategy='no', 
-    learning_rate=lr, 
-    num_train_epochs=num_train_epochs,
-    per_device_train_batch_size=batch_size,
-    per_device_eval_batch_size=batch_size
-)
 
-train_dataset, test_dataset = dataset.split()
+def train(model, dataset, train_steps, eval_every=500, batch_size=32):
+    data_collator = DataCollatorWithPadding(tokenizer=dataset.tokenizer)
+    training_args = TrainingArguments(
+        output_dir="test_trainer", 
+        evaluation_strategy="steps", 
+        eval_steps=eval_every
+        save_strategy='no', 
+        learning_rate=lr, 
+        max_steps=train_steps,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size
+    )
 
-trainer = trainer_cls(
-    model=model,
-    args=training_args,
-    train_dataset=train_dataset,
-    eval_dataset=test_dataset,
-    compute_metrics=compute_metrics,
-    data_collator=data_collator
-)
+    train_dataset, test_dataset = dataset.split()
 
-trainer.train()
+    trainer = trainer_cls(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=test_dataset,
+        compute_metrics=compute_metrics,
+        data_collator=data_collator
+    )
+
+    trainer.train()
+
+    acc = trainer.evaluate()['eval_accuracy']
+    return acc
+
+def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs):
+    id_dataset, ood_dataset = dataset.pivot(holdout_words)
+
+    train_acc = train(model, id_dataset, train_steps, **kwargs)
+    eval_acc = train(model, ood_dataset, finetune_steps, **kwargs)
+
+    return eval_acc
+
+
+
 
