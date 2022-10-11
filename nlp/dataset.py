@@ -109,6 +109,9 @@ class NLPDataset():
         self.occs = occs
         self.index_map = inverse_permutation(self.dataset['idx'])
 
+    def _index_map(self, indices):
+        return [self.index_map[x] if x < self.N and self.index_map[x] >= 0]
+
     def __len__(self):
         return self.N
 
@@ -126,7 +129,7 @@ class NLPDataset():
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
 
     def partition(self, indices):
-        subset = self.dataset.select(self.index_map[indices].tolist())
+        subset = self.dataset.select(self._index_map(indices))
         return NLPDataset(self.dataset_name, subset, self.tokenizer, self.vocab_size, self.occs)
         #ood_indices = torch.tensor([x for x in self.dataset['idx'] if x not in indices])
         #ood_dataset = self.dataset.select(self.index_map[ood_indices].tolist())
