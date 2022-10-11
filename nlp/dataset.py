@@ -94,16 +94,16 @@ class NLPDataset():
         final_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
         tokenized_dataset = tokenize_dataset(dataset, final_tokenizer, dataset_keys)
         
-        return cls(dataset_name, tokenized_dataset, final_tokenizer, occs)
+        return cls(dataset_name, tokenized_dataset, final_tokenizer, tokenizer.get_vocab_size(), occs)
 
-    def __init__(self, dataset_name, dataset, tokenizer, occs):
+    def __init__(self, dataset_name, dataset, tokenizer, vocab_size, occs):
         self.dataset_name = dataset_name
         self.dataset_keys = DATASETS[dataset_name]['keys']
         self.num_labels = DATASETS[dataset_name]['num_labels']
 
         self.dataset = dataset
         self.N = len(self.dataset)
-        self.vocab_size = tokenizer.get_vocab_size()
+        self.vocab_size = vocab_size
         
         self.tokenizer = tokenizer
         self.occs = occs
