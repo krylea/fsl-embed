@@ -27,10 +27,11 @@ num_heads = 16
 max_length = 128
 dropout = 0.1
 activation_fct = 'gelu'
-use_sym = 'vq'
+use_sym = 'gumbel'
 beta=1.
-lr=1e-3
+lr=5e-5
 num_train_epochs=6.0
+batch_size=32
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
@@ -62,7 +63,15 @@ def compute_metrics(eval_pred):
 
 
 data_collator = DataCollatorWithPadding(tokenizer=train_dataset.tokenizer)
-training_args = TrainingArguments(output_dir="test_trainer", evaluation_strategy="epoch", save_strategy='no', learning_rate=lr, num_train_epochs=num_train_epochs)
+training_args = TrainingArguments(
+    output_dir="test_trainer", 
+    evaluation_strategy="epoch", 
+    save_strategy='no', 
+    learning_rate=lr, 
+    num_train_epochs=num_train_epochs,
+    per_device_train_batch_size=batch_size,
+    per_device_eval_batch_size=batch_size
+)
 
 trainer = trainer_cls(
     model=model,
@@ -75,3 +84,5 @@ trainer = trainer_cls(
 
 trainer.train()
 
+
+#def train(model, dataset, steps)

@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 # taken from pytorch in case i need to change something in it eventually
-def gumbel_softmax(logits, tau=1, hard=True):
+def gumbel_softmax(logits, tau=1, hard=True, dim=-1):
     gumbels = (
         -torch.empty_like(logits, memory_format=torch.legacy_contiguous_format).exponential_().log()
     )  # ~Gumbel(0,1)
@@ -28,4 +28,9 @@ def knn(X, Y, k):
     _, indices = dists.topk(k, dim=-1)  # * x N x k
     return indices
 
-    
+
+def inverse_permutation(perm, max_size=-1):
+    max_size = perm.max()
+    inv = torch.ones(max_size+1, dtype=perm.dtype) * -1
+    inv[perm] = torch.arange(perm.size(0), device=perm.device)
+    return inv

@@ -43,14 +43,12 @@ def train_tokenizer(dataset, vocab_size, batch_size=1000, dataset_keys=["text"])
     return tokenizer
 
 def count_vocab(dataset, tokenizer, dataset_keys=["text"]):
-    occurences = {}
+    occurences = torch.zeros(N_seqs, N_words, dtype=torch.int)
     for i, ex in enumerate(dataset):
         for k in dataset_keys:
             tokenized_example = tokenizer.encode(ex[k])
             for idx in tokenized_example.ids:
-                if idx not in occurences:
-                    occurences[idx] = set()
-                occurences[idx].add(i)
+                occurences[i, idx] = 1
     return occurences
 
 def word_correlations(dataset, tokenizer, dataset_keys=["text"]):
@@ -70,8 +68,8 @@ def tokenize_dataset(dataset, tokenizer, dataset_keys):
 def filter_task_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], counts=None):
     if counts == None:
         occs = count_vocab(dataset, tokenizer, dataset_keys)
-        counts = {k:len(v) for k,v in occs.items()}
-    sorted_indices = sorted(counts, key=counts.get, reverse=True)
+        counts = occs.sum(dim=0)
+    _, sorted_indices = counts.sort(descending=True)
     top_words = sorted_indices[:n_words]
     def _filter(row):
         for k in dataset_keys:
@@ -103,3 +101,6 @@ def build_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
     model = BertForSequenceClassification(config)
     return model
+
+
+

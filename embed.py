@@ -65,7 +65,12 @@ class SymbolicEmbeddingsVQ(nn.Module):
         self.mode = mode
         self.beta = beta
 
-        self.tau = nn.Parameter(torch.Tensor([1.]))
+        if self.mode == 'concat':
+            self.dim = symbol_dim * pattern_length
+        elif self.mode == 'split':
+            self.dim = symbol_dim
+        else:
+            raise NotImplementedError("concat or split")
 
         self.symbols = nn.Parameter(torch.empty(n_symbols, symbol_dim))
         self.latents = nn.Parameter(torch.empty(n_categories, pattern_length, symbol_dim))
