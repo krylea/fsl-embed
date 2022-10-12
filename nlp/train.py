@@ -18,7 +18,7 @@ import copy
 #args = parser.parse_args()
 
 voc_size = 20000
-top_words = 2000
+top_words = -1
 n_symbols = 2000
 pattern_length = 8
 latent_size = 512
@@ -34,8 +34,9 @@ lr=5e-5
 num_train_epochs=6.0
 batch_size=32
 dataset_name='mnli'
+num_labels=DATASETS[dataset_name]['num_labels']
 
-def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
+def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
     if symbolic_embeds is None:
         model = BertForSequenceClassification(config)
@@ -54,7 +55,7 @@ elif use_sym == 'vq':
     sym = SymbolicEmbeddingsVQ(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length, beta)
     trainer_cls=VQTrainer
 
-model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, sym)
+model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
 
 
 metric = evaluate.load("accuracy")
@@ -101,6 +102,9 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
         del finetune_model
         accs[word_idx] = eval_acc
     return accs
+
+
+train(model, dataset, 2000)
 
 '''
 occs = dataset.occs
