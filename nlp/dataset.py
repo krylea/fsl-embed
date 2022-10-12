@@ -123,6 +123,7 @@ class NLPDataset():
         occs, counts = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
         if top_words > 0:
             dataset = filter_by_top_words(dataset, tokenizer, top_words, occs, counts, dataset_keys, sparse=sparse)
+            occs, counts = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
         final_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
         tokenized_dataset = tokenize_dataset(dataset, final_tokenizer, dataset_keys)
         
@@ -145,7 +146,7 @@ class NLPDataset():
         self.sparse = sparse
 
     def _index_map(self, indices):
-        return [self.index_map[x] for x in indices if x < self.index_map.size(0) and self.index_map[x] >= 0]
+        return [self.index_map[x].item() for x in indices if x < self.index_map.size(0) and self.index_map[x] >= 0]
 
     def __len__(self):
         return self.N
