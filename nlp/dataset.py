@@ -78,6 +78,7 @@ def get_occurrences(dataset, tokenizer, dataset_keys=["text"], sparse=False):
                 tokenized_example = tokenizer.encode(ex[k])
                 for idx in tokenized_example.ids:
                     occurences[i, idx] = True
+        counts = occurences.sum(dim=0)
     else: 
         indices = [[], []]
         values = []
@@ -89,19 +90,11 @@ def get_occurrences(dataset, tokenizer, dataset_keys=["text"], sparse=False):
                     indices[1].append(idx)
                     values.append(1)
         occurences = torch.sparse_coo_tensor(indices, values, (N_seqs,N_words))
-    return occurences
+        counts = torch.sparse.sum(occurences, dim=0).to_dense()
+    return occurences, counts
 
 
-def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], occs=None, sparse=False):
-    if occs == None:
-        occs = get_occurrences(dataset, tokenizer, dataset_keys)
-    if sparse:
-        if not occs.is_sparse:
-            occs = occs.to_sparse()
-        counts = torch.sparse.sum(occs.int(), dim=0)
-        counts = counts.to_dense()
-    else:
-        counts = occs.sum(dim=0)
+def filter_by_top_words(dataset, tokenizer, n_words, occs, counts, dataset_keys=["text"], sparse=False):
     _, sorted_indices = counts.sort(descending=True)
     bottom_words = sorted_indices[n_words:]
     if sparse:
@@ -125,15 +118,15 @@ class NLPDataset():
         dataset_keys = DATASETS[dataset_name]['keys']
         sparse = DATASETS[dataset_name]['sparse']
         tokenizer = train_tokenizer(dataset, vocab_size, dataset_keys=dataset_keys)
-        occs = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
+        occs, counts = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
         if top_words > 0:
-            dataset = filter_by_top_words(dataset, tokenizer, top_words, dataset_keys, occs, sparse=sparse)
+            dataset = filter_by_top_words(dataset, tokenizer, top_words, occs, counts, dataset_keys, sparse=sparse)
         final_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
         tokenized_dataset = tokenize_dataset(dataset, final_tokenizer, dataset_keys)
         
-        return cls(dataset_name, tokenized_dataset, final_tokenizer, tokenizer.get_vocab_size(), occs)
+        return cls(dataset_name, tokenized_dataset, final_tokenizer, tokenizer.get_vocab_size(), occs, counts)
 
-    def __init__(self, dataset_name, dataset, tokenizer, vocab_size, occs):
+    def __init__(self, dataset_name, dataset, tokenizer, vocab_size, occs, counts):
         self.dataset_name = dataset_name
         self.dataset_keys = DATASETS[dataset_name]['keys']
         self.num_labels = DATASETS[dataset_name]['num_labels']
@@ -144,6 +137,7 @@ class NLPDataset():
         
         self.tokenizer = tokenizer
         self.occs = occs
+        self.counts = counts
         self.index_map = inverse_permutation(self.dataset['idx'])
 
     def _index_map(self, indices):
@@ -167,13 +161,13 @@ class NLPDataset():
 
     def partition(self, indices):
         subset = self.dataset.select(self._index_map(indices))
-        return NLPDataset(self.dataset_name, subset, self.tokenizer, self.vocab_size, self.occs)
+        return NLPDataset(self.dataset_name, subset, self.tokenizer, self.vocab_size, self.occs, self.counts)
         #ood_indices = torch.tensor([x for x in self.dataset['idx'] if x not in indices])
         #ood_dataset = self.dataset.select(self.index_map[ood_indices].tolist())
 
     def split(self, test_frac=0.1):
         split_dataset = self.dataset.train_test_split(test_size=test_frac)
-        return [NLPDataset(self.dataset_name, split_dataset[split], self.tokenizer, self.vocab_size, self.occs) for split in split_dataset]
+        return [NLPDataset(self.dataset_name, split_dataset[split], self.tokenizer, self.vocab_size, self.occs, self.counts) for split in split_dataset]
 
 
         

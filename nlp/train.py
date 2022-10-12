@@ -18,7 +18,7 @@ import copy
 #args = parser.parse_args()
 
 voc_size = 20000
-top_words = -1
+top_words = 2000
 n_symbols = 2000
 pattern_length = 8
 latent_size = 512
@@ -37,7 +37,7 @@ dataset_name='mnli'
 num_labels=DATASETS[dataset_name]['num_labels']
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, symbolic_embeds=None):
-    config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
+    config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length, num_labels=num_labels)
     if symbolic_embeds is None:
         model = BertForSequenceClassification(config)
     else:
