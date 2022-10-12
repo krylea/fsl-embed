@@ -126,7 +126,7 @@ class NLPDataset():
         
         return cls(dataset_name, tokenized_dataset, final_tokenizer, tokenizer.get_vocab_size(), occs, counts)
 
-    def __init__(self, dataset_name, dataset, tokenizer, vocab_size, occs, counts):
+    def __init__(self, dataset_name, dataset, tokenizer, vocab_size, occs, counts, sparse):
         self.dataset_name = dataset_name
         self.dataset_keys = DATASETS[dataset_name]['keys']
         self.num_labels = DATASETS[dataset_name]['num_labels']
@@ -140,6 +140,8 @@ class NLPDataset():
         self.counts = counts
         self.index_map = inverse_permutation(self.dataset['idx'])
 
+        self.sparse = sparse
+
     def _index_map(self, indices):
         return [self.index_map[x] for x in indices if x < self.index_map.size(0) and self.index_map[x] >= 0]
 
@@ -150,12 +152,27 @@ class NLPDataset():
         return self.dataset[i]
 
     def pivot(self, word_indices):
+        if self.sparse:
+            return self._pivot_sparse(word_indices)
+        else:
+            return self._pivot(word_indices)
+
+    def _pivot(self, word_indices):
         id_indices = (self.occs[:,word_indices].sum(dim=1) == 0).nonzero().squeeze(1)
-        #ood_indices = (occs[:,word_indices].sum(dim=1)).nonzero().squeeze(1)
 
         ood_indices_by_word = {}
         for idx in word_indices:
             ood_indices_by_word[idx.item()]= self.occs[:,idx].nonzero().squeeze(1)
+
+        return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
+    
+    def _pivot_sparse(self, word_indices):
+        word_counts = torch.sparse.sum(occs.index_select(1,bottom_words), dim=1).to_dense()
+        id_indices = (word_counts == 0).nonzero().squeeze(1)
+
+        ood_indices_by_word = {}
+        for idx in word_indices:
+            ood_indices_by_word[idx.item()]= self.occs.index_select(1, idx).to_dense().nonzero().squeeze(1)
 
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
 

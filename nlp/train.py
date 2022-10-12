@@ -104,17 +104,18 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
     return accs
 
 
-train(model, dataset, 2000)
+#train(model, dataset, 2000)
 
 '''
-occs = dataset.occs
-counts = occs.sum(dim=0)
+counts = dataset.counts
 _, sorted_indices = counts.sort(descending=True)
 ordered_inds = [37, 106, 87, 98, 55]
 holdout_inds = sorted_indices[ordered_inds]
+words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
+sizes = {dataset.tokenizer.convert_ids_to_tokens([word_idx])[0]: counts[word_idx] for word_idx in holdout_inds}
 accs = fewshot(model, dataset, holdout_inds, 2000, 500)
 
-words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
+
 '''
 
 
