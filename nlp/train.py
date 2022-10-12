@@ -3,7 +3,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trai
 import evaluate
 import numpy as np
 
-from nlp.dataset import NLPDataset
+from nlp.dataset import NLPDataset, DATASETS
 from nlp.models import BertForSequenceClassificationWrapper
 from nlp.training_utils import VQTrainer
 from embed import SymbolicEmbeddingsGumbel, SymbolicEmbeddingsVQ
