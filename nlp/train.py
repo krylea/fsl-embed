@@ -33,6 +33,7 @@ beta=1.
 lr=5e-5
 num_train_epochs=6.0
 batch_size=32
+dataset_name='mnli'
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length)
@@ -42,7 +43,7 @@ def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_hea
         model = BertForSequenceClassificationWrapper(config, symbolic_embeds)
     return model
 
-dataset = NLPDataset.process_dataset("sst2", voc_size, top_words)
+dataset = NLPDataset.process_dataset(dataset_name, voc_size, top_words)
 tokenizer = dataset.tokenizer
 
 sym = None
@@ -101,7 +102,7 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
         accs[word_idx] = eval_acc
     return accs
 
-
+'''
 occs = dataset.occs
 counts = occs.sum(dim=0)
 _, sorted_indices = counts.sort(descending=True)
@@ -110,4 +111,6 @@ holdout_inds = sorted_indices[ordered_inds]
 accs = fewshot(model, dataset, holdout_inds, 2000, 500)
 
 words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
+'''
+
 
