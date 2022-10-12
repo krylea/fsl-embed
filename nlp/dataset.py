@@ -13,7 +13,7 @@ from utils import inverse_permutation
 from transformers import PreTrainedTokenizerFast
 
 import torch
-import torch.sparse as sparse
+import torch.sparse
 
 import datasets
 import tqdm
@@ -98,14 +98,14 @@ def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], occs
     if sparse:
         if not occs.is_sparse:
             occs = occs.to_sparse()
-        counts = sparse.sum(occs.int(), dim=0)
+        counts = torch.sparse.sum(occs.int(), dim=0)
         counts = counts.to_dense()
     else:
         counts = occs.sum(dim=0)
     _, sorted_indices = counts.sort(descending=True)
     bottom_words = sorted_indices[n_words:]
     if sparse:
-        bottom_counts = sparse.sum(occs.index_select(1,bottom_words), dim=1).to_dense()
+        bottom_counts = torch.sparse.sum(occs.index_select(1,bottom_words), dim=1).to_dense()
         id_indices = (bottom_counts == 0).nonzero().squeeze(1)
     else:
         id_indices = (occs[:,bottom_words].sum(dim=1) == 0).nonzero().squeeze(1)
