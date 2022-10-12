@@ -35,6 +35,7 @@ num_train_epochs=6.0
 batch_size=32
 dataset_name='mnli'
 num_labels=DATASETS[dataset_name]['num_labels']
+max_size=-1
 
 def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, symbolic_embeds=None):
     config = BertConfig(vocab_size, latent_size, num_layers, num_heads, hidden_size, activation_fct, dropout, dropout, max_length, num_labels=num_labels)
@@ -44,7 +45,7 @@ def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_hea
         model = BertForSequenceClassificationWrapper(config, symbolic_embeds)
     return model
 
-dataset = NLPDataset.process_dataset(dataset_name, voc_size, top_words, max_size=50000)
+dataset = NLPDataset.process_dataset(dataset_name, voc_size, top_words, max_size=max_size)
 tokenizer = dataset.tokenizer
 
 sym = None
@@ -101,7 +102,7 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
         print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], eval_acc))
         del finetune_model
         accs[word_idx] = eval_acc
-    return accs
+    return train_acc, accs
 
 
 
@@ -113,9 +114,11 @@ _, sorted_indices = counts.sort(descending=True)
 ordered_inds = [37, 106, 87, 98, 55]
 holdout_inds = sorted_indices[ordered_inds]
 words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
-accs = fewshot(model, dataset, holdout_inds, 2000, 500)
+base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500)
 
-
+print("ID accuracy: %f" % base_acc)
+for k, v in fsl_accs.items():
+    print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
 
 
 
