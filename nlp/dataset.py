@@ -123,7 +123,7 @@ class NLPDataset():
         occs, counts = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
         if top_words > 0:
             dataset = filter_by_top_words(dataset, tokenizer, top_words, occs, counts, dataset_keys, sparse=sparse)
-            #occs, counts = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
+            occs, counts = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
         final_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
         tokenized_dataset = tokenize_dataset(dataset, final_tokenizer, dataset_keys)
         
@@ -175,12 +175,12 @@ class NLPDataset():
 
         ood_indices_by_word = {}
         for idx in word_indices:
-            ood_indices_by_word[idx.item()]= self.occs.select(1, idx.item()).indices().squeeze(0)
+            ood_indices_by_word[idx.item()]= self.occs.select(1, idx.item()).coalesce().indices().squeeze(0)
 
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
 
     def partition(self, indices):
-        subset = self.dataset.select(self._index_map(indices))
+        subset = self.dataset.select(indices.tolist())#self._index_map(indices))
         return NLPDataset(self.dataset_name, subset, self.tokenizer, self.vocab_size, self.occs, self.counts)
         #ood_indices = torch.tensor([x for x in self.dataset['idx'] if x not in indices])
         #ood_dataset = self.dataset.select(self.index_map[ood_indices].tolist())
