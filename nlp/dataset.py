@@ -83,13 +83,12 @@ def get_occurrences(dataset, tokenizer, dataset_keys=["text"], sparse=False):
         indices = [[], []]
         values = []
         for i, ex in tqdm.tqdm(enumerate(dataset)):
-            for k in dataset_keys:
-                tokenized_example = tokenizer.encode(ex[k])
-                unique_ids = torch.tensor(tokenized_example.ids).unique().tolist()
-                for idx in unique_ids:
-                    indices[0].append(i)
-                    indices[1].append(idx)
-                    values.append(1)
+            unique_ids = set([x for k in dataset_keys for x in tokenizer.encode(ex[k]).ids])
+            for idx in unique_ids:
+                indices[0].append(i)
+                indices[1].append(idx)
+                values.append(1)
+                
         occurences = torch.sparse_coo_tensor(indices, values, (N_seqs,N_words))
         counts = torch.sparse.sum(occurences, dim=0).to_dense()
     return occurences, counts
