@@ -114,11 +114,11 @@ _, sorted_indices = counts.sort(descending=True)
 ordered_inds = [37, 106, 87, 98, 55]
 holdout_inds = sorted_indices[ordered_inds]
 words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
-base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500)
+#base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500)
 
-print("ID accuracy: %f" % base_acc)
-for k, v in fsl_accs.items():
-    print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
+#print("ID accuracy: %f" % base_acc)
+#for k, v in fsl_accs.items():
+ #   print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
 
 
 

@@ -170,11 +170,11 @@ class NLPDataset():
     
     def _pivot_sparse(self, word_indices):
         word_counts = torch.sparse.sum(self.occs.index_select(1,word_indices), dim=1).to_dense()
-        id_indices = (word_counts == 0).nonzero().squeeze(1)
+        id_indices = (word_counts == 0).to_sparse().indices().squeeze(0)
 
         ood_indices_by_word = {}
         for idx in word_indices:
-            ood_indices_by_word[idx.item()]= self.occs.select(1, idx.item()).to_dense().nonzero().squeeze(1)
+            ood_indices_by_word[idx.item()]= self.occs.select(1, idx.item()).indices().squeeze(0)
 
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
 
