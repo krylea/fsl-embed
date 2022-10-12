@@ -89,7 +89,7 @@ def get_occurrences(dataset, tokenizer, dataset_keys=["text"], sparse=False):
                 indices[1].append(idx)
                 values.append(1)
                 
-        occurences = torch.sparse_coo_tensor(indices, values, (N_seqs,N_words))
+        occurences = torch.sparse_coo_tensor(indices, values, (N_seqs,N_words)).coalesce()
         counts = torch.sparse.sum(occurences, dim=0).to_dense()
     return occurences, counts
 
