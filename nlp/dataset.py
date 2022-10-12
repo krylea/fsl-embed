@@ -100,11 +100,15 @@ def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], occs
             occs = occs.to_sparse()
         counts = sparse.sum(occs.int(), dim=0)
         counts = counts.to_dense()
-    counts = occs.sum(dim=0)
+    else:
+        counts = occs.sum(dim=0)
     _, sorted_indices = counts.sort(descending=True)
-    #top_words = sorted_indices[:n_words]
     bottom_words = sorted_indices[n_words:]
-    id_indices = (occs[:,bottom_words].sum(dim=1) == 0).nonzero().squeeze(1)
+    if sparse:
+        bottom_counts = sparse.sum(occs.index_select(1,bottom_words), dim=1).to_dense()
+        id_indices = (bottom_counts == 0).nonzero().squeeze(1)
+    else:
+        id_indices = (occs[:,bottom_words].sum(dim=1) == 0).nonzero().squeeze(1)
     return dataset.select(id_indices.tolist())
 
 def tokenize_dataset(dataset, tokenizer, dataset_keys):
