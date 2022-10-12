@@ -180,7 +180,7 @@ class NLPDataset():
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
 
     def partition(self, indices):
-        subset = self.dataset.select(self._index_map(indices))
+        subset = self.dataset.select(indices.tolist())#self._index_map(indices))
         return NLPDataset(self.dataset_name, subset, self.tokenizer, self.vocab_size, self.occs, self.counts)
         #ood_indices = torch.tensor([x for x in self.dataset['idx'] if x not in indices])
         #ood_dataset = self.dataset.select(self.index_map[ood_indices].tolist())
