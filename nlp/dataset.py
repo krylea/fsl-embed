@@ -116,7 +116,7 @@ class NLPDataset():
     def process_dataset(cls, dataset_name, vocab_size, top_words, max_size=-1):
         dataset= load_dataset(dataset_name)['train']
         if max_size > 0:
-            dataset = dataset[:max_size]
+            dataset = dataset.select(range(max_size))
         dataset_keys = DATASETS[dataset_name]['keys']
         sparse = DATASETS[dataset_name]['sparse']
         tokenizer = train_tokenizer(dataset, vocab_size, dataset_keys=dataset_keys)
