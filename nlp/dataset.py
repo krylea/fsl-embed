@@ -121,7 +121,7 @@ def tokenize_dataset(dataset, tokenizer, dataset_keys):
 class NLPDataset():
     @classmethod
     def process_dataset(cls, dataset_name, vocab_size, top_words):
-        dataset= load_dataset(dataset_name)
+        dataset= load_dataset(dataset_name)['train']
         dataset_keys = DATASETS[dataset_name]['keys']
         sparse = DATASETS[dataset_name]['sparse']
         tokenizer = train_tokenizer(dataset, vocab_size, dataset_keys=dataset_keys)
