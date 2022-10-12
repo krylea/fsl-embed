@@ -34,7 +34,7 @@ TOKENS = {
 }
 
 
-def load_dataset(dataset_name):
+def load_dataset(dataset_name, max_size=-1):
     assert dataset_name in DATASETS
     dataset_args = DATASETS[dataset_name]
     if 'parent' in dataset_args:
@@ -113,8 +113,10 @@ def tokenize_dataset(dataset, tokenizer, dataset_keys):
 
 class NLPDataset():
     @classmethod
-    def process_dataset(cls, dataset_name, vocab_size, top_words):
+    def process_dataset(cls, dataset_name, vocab_size, top_words, max_size=-1):
         dataset= load_dataset(dataset_name)['train']
+        if max_size > 0:
+            dataset = dataset[:max_size]
         dataset_keys = DATASETS[dataset_name]['keys']
         sparse = DATASETS[dataset_name]['sparse']
         tokenizer = train_tokenizer(dataset, vocab_size, dataset_keys=dataset_keys)
@@ -167,7 +169,7 @@ class NLPDataset():
         return self.partition(id_indices), {k:self.partition(v) for k,v in ood_indices_by_word.items()}
     
     def _pivot_sparse(self, word_indices):
-        word_counts = torch.sparse.sum(occs.index_select(1,bottom_words), dim=1).to_dense()
+        word_counts = torch.sparse.sum(self.occs.index_select(1,word_indices), dim=1).to_dense()
         id_indices = (word_counts == 0).nonzero().squeeze(1)
 
         ood_indices_by_word = {}
