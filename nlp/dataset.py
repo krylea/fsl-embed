@@ -12,15 +12,18 @@ from utils import inverse_permutation
 
 from transformers import PreTrainedTokenizerFast
 
-import datasets
-
 import torch
+import torch.sparse as sparse
+
+import datasets
+import tqdm
 
 DATASETS = {
-    'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter':lambda ex: ex['label'] != -1},
-    'mrpc': {'keys': ['sentence1', 'sentence2'], 'num_labels': 2},
-    'imdb': {'keys': ['text'], 'num_labels': 2},
-    'sst2': {'keys': ['sentence'], 'num_labels': 2}
+    'snli': {'keys': ['premise', 'hypothesis'], 'num_labels': 3, 'filter':lambda ex: ex['label'] != -1, 'sparse': False},
+    'mrpc': {'keys': ['sentence1', 'sentence2'], 'num_labels': 2, 'sparse': False},
+    'imdb': {'keys': ['text'], 'num_labels': 2, 'sparse': False},
+    'sst2': {'keys': ['sentence'], 'num_labels': 2, 'sparse': False},
+    'mnli': {'keys': ['premise', 'hypothesis'], 'num_labels':3, 'parent': 'glue', 'sparse': True}
 }
 
 TOKENS = {
@@ -29,6 +32,19 @@ TOKENS = {
     'sep_token': "[SEP]",
     'unk_token': "[UNK]",
 }
+
+
+def load_dataset(dataset_name):
+    assert dataset_name in DATASETS
+    dataset_args = DATASETS[dataset_name]
+    if 'parent' in dataset_args:
+        dataset = datasets.load_dataset(dataset_args['parent'], dataset_name)
+    else:
+        dataset = datasets.load_dataset(dataset_name)
+    if 'filter' in dataset_args:
+        dataset = dataset.filter(dataset_args['filter'])
+    return dataset
+
 
 def batch_iterator(dataset, batch_size=1000, dataset_keys=["text"]):
     for i in range(0, len(dataset), batch_size):
@@ -52,20 +68,38 @@ def train_tokenizer(dataset, vocab_size, batch_size=1000, dataset_keys=["text"])
     tokenizer.train_from_iterator(batch_iterator(dataset, batch_size=batch_size, dataset_keys=dataset_keys), trainer=trainer, length=len(dataset))
     return tokenizer
 
-def get_occurrences(dataset, tokenizer, dataset_keys=["text"]):
+def get_occurrences(dataset, tokenizer, dataset_keys=["text"], sparse=False):
     N_seqs = len(dataset)
     N_words = len(tokenizer.get_vocab())
-    occurences = torch.zeros(N_seqs, N_words, dtype=torch.bool)
-    for i, ex in enumerate(dataset):
-        for k in dataset_keys:
-            tokenized_example = tokenizer.encode(ex[k])
-            for idx in tokenized_example.ids:
-                occurences[i, idx] = True
+    if not sparse:
+        occurences = torch.zeros(N_seqs, N_words, dtype=torch.int)
+        for i, ex in tqdm.tqdm(enumerate(dataset)):
+            for k in dataset_keys:
+                tokenized_example = tokenizer.encode(ex[k])
+                for idx in tokenized_example.ids:
+                    occurences[i, idx] = True
+    else: 
+        indices = [[], []]
+        values = []
+        for i, ex in tqdm.tqdm(enumerate(dataset)):
+            for k in dataset_keys:
+                tokenized_example = tokenizer.encode(ex[k])
+                for idx in tokenized_example.ids:
+                    indices[0].append(i)
+                    indices[1].append(idx)
+                    values.append(1)
+        occurences = torch.sparse_coo_tensor(indices, values, (N_seqs,N_words))
     return occurences
 
-def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], occs=None):
+
+def filter_by_top_words(dataset, tokenizer, n_words, dataset_keys=["text"], occs=None, sparse=False):
     if occs == None:
         occs = get_occurrences(dataset, tokenizer, dataset_keys)
+    if sparse:
+        if not occs.is_sparse:
+            occs = occs.to_sparse()
+        counts = sparse.sum(occs.int(), dim=0)
+        counts = counts.to_dense()
     counts = occs.sum(dim=0)
     _, sorted_indices = counts.sort(descending=True)
     #top_words = sorted_indices[:n_words]
@@ -83,14 +117,13 @@ def tokenize_dataset(dataset, tokenizer, dataset_keys):
 class NLPDataset():
     @classmethod
     def process_dataset(cls, dataset_name, vocab_size, top_words):
-        dataset= datasets.load_dataset(dataset_name)['train']
-        if 'filter' in DATASETS[dataset_name]:
-            dataset = dataset.filter(DATASETS[dataset_name]['filter'])
+        dataset= load_dataset(dataset_name)
         dataset_keys = DATASETS[dataset_name]['keys']
+        sparse = DATASETS[dataset_name]['sparse']
         tokenizer = train_tokenizer(dataset, vocab_size, dataset_keys=dataset_keys)
-        occs = get_occurrences(dataset, tokenizer, dataset_keys)
+        occs = get_occurrences(dataset, tokenizer, dataset_keys, sparse=sparse)
         if top_words > 0:
-            dataset = filter_by_top_words(dataset, tokenizer, top_words, dataset_keys, occs)
+            dataset = filter_by_top_words(dataset, tokenizer, top_words, dataset_keys, occs, sparse=sparse)
         final_tokenizer = PreTrainedTokenizerFast(tokenizer_object=tokenizer, **TOKENS)
         tokenized_dataset = tokenize_dataset(dataset, final_tokenizer, dataset_keys)
         

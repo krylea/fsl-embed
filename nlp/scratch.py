@@ -106,3 +106,13 @@ def test_holdout(dataset, model, holdout_indices, train_steps, finetune_steps):
 
 
 
+from nlp.dataset import *
+dataset= datasets.load_dataset('glue','mnli')['train']
+DATASETS['mnli'] = {'keys': ['premise', 'hypothesis'], 'num_labels':3}
+dataset_name='mnli'
+vocab_size=20000
+top_words=2000
+dataset_keys = DATASETS[dataset_name]['keys']
+tokenizer = train_tokenizer(dataset, vocab_size, dataset_keys=dataset_keys)
+occs = get_occurrences(dataset, tokenizer, dataset_keys)
+

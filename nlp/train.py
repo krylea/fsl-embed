@@ -95,7 +95,7 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
     accs = {}
     for word_idx, word_dataset in ood_datasets.items():
         finetune_model = copy.deepcopy(model)
-        eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=125, test_frac=0.3, **kwargs)
+        eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=125, test_frac=0.5, **kwargs)
         print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], eval_acc))
         del finetune_model
         accs[word_idx] = eval_acc
@@ -108,4 +108,6 @@ _, sorted_indices = counts.sort(descending=True)
 ordered_inds = [37, 106, 87, 98, 55]
 holdout_inds = sorted_indices[ordered_inds]
 accs = fewshot(model, dataset, holdout_inds, 2000, 500)
+
+words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
 
