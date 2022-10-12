@@ -85,7 +85,8 @@ def get_occurrences(dataset, tokenizer, dataset_keys=["text"], sparse=False):
         for i, ex in tqdm.tqdm(enumerate(dataset)):
             for k in dataset_keys:
                 tokenized_example = tokenizer.encode(ex[k])
-                for idx in tokenized_example.ids:
+                unique_ids = torch.tensor(tokenized_example.ids).unique().tolist()
+                for idx in unique_ids:
                     indices[0].append(i)
                     indices[1].append(idx)
                     values.append(1)
