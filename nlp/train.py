@@ -76,18 +76,19 @@ def train(model, dataset, train_steps, trainer_cls=Trainer, eval_every=500, batc
         compute_metrics=compute_metrics,
         data_collator=data_collator
     )
+    initial_acc = trainer.evaluate()['eval_accuracy']
     trainer.train()
-    acc = trainer.evaluate()['eval_accuracy']
-    return acc
+    final_acc = trainer.evaluate()['eval_accuracy']
+    return initial_acc, final_acc
 
-def fewshot(model, ood_datasets, finetune_steps, trainer_cls=Trainer, **kwargs):
+def fewshot(model, ood_datasets, finetune_steps, lr=5e-5, trainer_cls=Trainer, **kwargs):
     accs = {}
     for word_idx, word_dataset in ood_datasets.items():
         finetune_model = copy.deepcopy(model)
-        eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=125, test_frac=0.5, trainer_cls=trainer_cls, **kwargs)
-        print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], eval_acc))
+        initial_acc, eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=125, test_frac=0.5, trainer_cls=trainer_cls, **kwargs)
+        print("\n%s: \tInitial Accuracy: %f\tFinal Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], initial_acc, eval_acc))
         del finetune_model
-        accs[word_idx] = eval_acc
+        accs[word_idx] = (initial_acc, eval_acc)
     return accs
 
 
@@ -108,7 +109,7 @@ def run_pretrain(dataset, holdout_words, use_sym='none', n_symbols=2000, pattern
 
     id_dataset, ood_datasets = dataset.pivot(holdout_words)
 
-    acc = train(model, id_dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
+    _, acc = train(model, id_dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
     print("\n Accuracy: %f" % acc)
 
     return model, id_dataset, ood_datasets, trainer_cls
@@ -129,7 +130,7 @@ def run_train(dataset, use_sym='none', n_symbols=2000, pattern_length=8, augment
     model = build_simple_model(dataset.vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
     tokenizer = dataset.tokenizer
 
-    acc = train(model, dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
+    _, acc = train(model, dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
     print("\n Accuracy: %f" % acc)
 
     '''
@@ -160,13 +161,13 @@ def run_fewshot(dataset, holdout_words, use_sym='none', n_symbols=2000, pattern_
 
     id_dataset, ood_datasets = dataset.pivot(holdout_words)
 
-    id_acc = train(model, id_dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
+    id_acc = _, train(model, id_dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
 
-    ood_accs = fewshot(model, ood_datasets, finetune_steps, trainer_cls=trainer_cls)
+    ood_accs = fewshot(model, ood_datasets, finetune_steps, trainer_cls=trainer_cls, lr=lr)
 
     print("\nID accuracy: %f" % id_acc)
     for k, v in ood_accs.items():
-        print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
+        print("%s: \tInitial Accuracy: %f\tFinal Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], *v))
 
     #return model, id_dataset, ood_datasets, trainer_cls
 
