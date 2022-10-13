@@ -106,13 +106,13 @@ def run_fewshot(dataset_name, use_sym='none', n_symbols=2000, pattern_length=8, 
 
     if holdout_inds is not None:
         words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
-        base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500)
+        base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500, trainer_cls=trainer_cls)
 
         print("\nID accuracy: %f" % base_acc)
         for k, v in fsl_accs.items():
             print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
     else:
-        acc = train(model, dataset, max_steps, batch_size=batch_size)
+        acc = train(model, dataset, max_steps, batch_size=batch_size, trainer_cls=trainer_cls)
         print("\n Accuracy: %f" % acc)
 
         
