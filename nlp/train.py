@@ -80,9 +80,7 @@ def train(model, dataset, train_steps, trainer_cls=Trainer, eval_every=500, batc
     acc = trainer.evaluate()['eval_accuracy']
     return acc
 
-def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, trainer_cls=Trainer, **kwargs):
-    id_dataset, ood_datasets = dataset.pivot(holdout_words)
-    train_acc = train(model, id_dataset, train_steps, trainer_cls=trainer_cls, **kwargs)
+def fewshot(model, ood_datasets, finetune_steps, trainer_cls=Trainer, **kwargs):
     accs = {}
     for word_idx, word_dataset in ood_datasets.items():
         finetune_model = copy.deepcopy(model)
@@ -90,11 +88,10 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, trainer_
         print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], eval_acc))
         del finetune_model
         accs[word_idx] = eval_acc
-    return train_acc, accs
+    return accs
 
 
-
-def run_fewshot(dataset, use_sym='none', n_symbols=2000, pattern_length=8, augment_dim=-1, holdout_inds=None, lr=5e-5, max_steps=2000, batch_size=32,
+def run_pretrain(dataset, holdout_words, use_sym='none', n_symbols=2000, pattern_length=8, augment_dim=-1, lr=5e-5, train_steps=6000, batch_size=32,
         latent_size = 512, hidden_size = 1024, num_layers = 4, num_heads = 16, max_length = 128, dropout = 0.1, activation_fct = 'gelu', **sym_kwargs):
     sym = None
     trainer_cls=Trainer
@@ -109,16 +106,69 @@ def run_fewshot(dataset, use_sym='none', n_symbols=2000, pattern_length=8, augme
     model = build_simple_model(dataset.vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
     tokenizer = dataset.tokenizer
 
+    id_dataset, ood_datasets = dataset.pivot(holdout_words)
+
+    acc = train(model, id_dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
+    print("\n Accuracy: %f" % acc)
+
+    return model, id_dataset, ood_datasets, trainer_cls
+
+
+def run_train(dataset, use_sym='none', n_symbols=2000, pattern_length=8, augment_dim=-1, lr=5e-5, train_steps=6000, batch_size=32,
+        latent_size = 512, hidden_size = 1024, num_layers = 4, num_heads = 16, max_length = 128, dropout = 0.1, activation_fct = 'gelu', **sym_kwargs):
+    sym = None
+    trainer_cls=Trainer
+    symbol_dim = latent_size // pattern_length if augment_dim <= 0 else (latent_size-augment_dim) // pattern_length
+    if use_sym == 'gumbel':
+        sym = SymbolicEmbeddingsGumbel(dataset.vocab_size, n_symbols, pattern_length, symbol_dim, augment_dim=augment_dim, **sym_kwargs)
+    elif use_sym == 'vq':
+        sym = SymbolicEmbeddingsVQ(dataset.vocab_size, n_symbols, pattern_length, symbol_dim, augment_dim=augment_dim, **sym_kwargs)
+        trainer_cls=VQTrainer
+
+    num_labels=dataset.num_labels
+    model = build_simple_model(dataset.vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
+    tokenizer = dataset.tokenizer
+
+    acc = train(model, dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
+    print("\n Accuracy: %f" % acc)
+
+    '''
     if holdout_inds is not None:
         words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
-        base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
+        base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, train_steps, 500, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
 
         print("\nID accuracy: %f" % base_acc)
         for k, v in fsl_accs.items():
             print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
     else:
-        acc = train(model, dataset, max_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
-        print("\n Accuracy: %f" % acc)
+        '''
+
+def run_fewshot(dataset, holdout_words, use_sym='none', n_symbols=2000, pattern_length=8, augment_dim=-1, lr=5e-5, train_steps=6000, finetune_steps=500, batch_size=32,
+        latent_size = 512, hidden_size = 1024, num_layers = 4, num_heads = 16, max_length = 128, dropout = 0.1, activation_fct = 'gelu', **sym_kwargs):
+    sym = None
+    trainer_cls=Trainer
+    symbol_dim = latent_size // pattern_length if augment_dim <= 0 else (latent_size-augment_dim) // pattern_length
+    if use_sym == 'gumbel':
+        sym = SymbolicEmbeddingsGumbel(dataset.vocab_size, n_symbols, pattern_length, symbol_dim, augment_dim=augment_dim, **sym_kwargs)
+    elif use_sym == 'vq':
+        sym = SymbolicEmbeddingsVQ(dataset.vocab_size, n_symbols, pattern_length, symbol_dim, augment_dim=augment_dim, **sym_kwargs)
+        trainer_cls=VQTrainer
+
+    num_labels=dataset.num_labels
+    model = build_simple_model(dataset.vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
+    tokenizer = dataset.tokenizer
+
+    id_dataset, ood_datasets = dataset.pivot(holdout_words)
+
+    id_acc = train(model, id_dataset, train_steps, lr=lr, batch_size=batch_size, trainer_cls=trainer_cls)
+
+    ood_accs = fewshot(model, ood_datasets, finetune_steps, trainer_cls=trainer_cls)
+
+    print("\nID accuracy: %f" % id_acc)
+    for k, v in ood_accs.items():
+        print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
+
+    #return model, id_dataset, ood_datasets, trainer_cls
 
         
 
