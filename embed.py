@@ -10,6 +10,7 @@ from utils import knn
 
 class SymbolicEmbeddings(nn.Module):
     def __init__(self, n_categories, n_symbols, pattern_length, symbol_dim, mode='concat', augment_dim=-1):
+        super().__init__()
         self.n_categories = n_categories
         self.n_symbols = n_symbols
         self.pattern_length = pattern_length
