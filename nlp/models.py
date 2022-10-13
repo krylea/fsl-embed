@@ -10,7 +10,15 @@ class BertModelWrapper(BertModel):
         super().__init__(config, **kwargs)
         self.embeddings = BertEmbeddingWrapper(config, symbolic_embeds)
 
+
 class BertForSequenceClassificationWrapper(BertForSequenceClassification):
     def __init__(self, config, symbolic_embeds):
         super().__init__(config)
         self.bert = BertModelWrapper(config, symbolic_embeds)
+
+    def freeze_model(self):
+        for param in self.parameters():
+            param.requires_grad_(False)
+        
+        for param in self.bert.embeddings.parameters():
+            param.requires_grad_(True)
