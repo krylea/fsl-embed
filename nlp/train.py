@@ -45,29 +45,14 @@ def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_hea
         model = BertForSequenceClassificationWrapper(config, symbolic_embeds)
     return model
 
-dataset = NLPDataset.process_dataset(dataset_name, voc_size, top_words, max_size=max_size)
-tokenizer = dataset.tokenizer
-
-sym = None
-trainer_cls=Trainer
-if use_sym == 'gumbel':
-    sym = SymbolicEmbeddingsGumbel(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
-elif use_sym == 'vq':
-    sym = SymbolicEmbeddingsVQ(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length, beta)
-    trainer_cls=VQTrainer
-
-model = build_simple_model(voc_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
-
-
-metric = evaluate.load("accuracy")
-def compute_metrics(eval_pred):
-    logits, labels = eval_pred
-    predictions = np.argmax(logits, axis=-1)
-    return metric.compute(predictions=predictions, references=labels)
-
-
 
 def train(model, dataset, train_steps, eval_every=500, batch_size=32, test_frac=0.1):
+    metric = evaluate.load("accuracy")
+    def compute_metrics(eval_pred):
+        logits, labels = eval_pred
+        predictions = np.argmax(logits, axis=-1)
+        return metric.compute(predictions=predictions, references=labels)
+
     data_collator = DataCollatorWithPadding(tokenizer=dataset.tokenizer)
     training_args = TrainingArguments(
         output_dir="test_trainer", 
@@ -106,19 +91,39 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
 
 
 
-#train(model, dataset, 2000)
+def run_fewshot(dataset_name, vocab_size, top_words, use_sym, n_symbols, pattern_length, holdout_inds=None, beta=1., lr=5e-5, max_steps=2000, max_size=-1, batch_size=32,
+        latent_size = 512, hidden_size = 1024, num_layers = 4, num_heads = 16, max_length = 128, dropout = 0.1, activation_fct = 'gelu'):
+    sym = None
+    trainer_cls=Trainer
+    if use_sym == 'gumbel':
+        sym = SymbolicEmbeddingsGumbel(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length)
+    elif use_sym == 'vq':
+        sym = SymbolicEmbeddingsVQ(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length, beta)
+        trainer_cls=VQTrainer
 
+    model = build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
+    tokenizer = dataset.tokenizer
+
+    if holdout_inds is not None:
+        words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
+        base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500)
+
+        print("\nID accuracy: %f" % base_acc)
+        for k, v in fsl_accs.items():
+            print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
+    else:
+        acc = train(model, dataset, max_steps, batch_size=batch_size)
+        print("\n Accuracy: %f" % acc)
+
+        
+
+dataset = NLPDataset.process_dataset(dataset_name, voc_size, top_words, max_size=max_size)
 
 counts = dataset.counts
 _, sorted_indices = counts.sort(descending=True)
 ordered_inds = [37, 106, 87, 98, 55]
 holdout_inds = sorted_indices[ordered_inds]
-words = [dataset.tokenizer.convert_ids_to_tokens([word_idx])[0] for word_idx in holdout_inds]
-#base_acc, fsl_accs = fewshot(model, dataset, holdout_inds, 2000, 500)
 
-#print("ID accuracy: %f" % base_acc)
-#for k, v in fsl_accs.items():
- #   print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([k])[0], v))
 
 
 
