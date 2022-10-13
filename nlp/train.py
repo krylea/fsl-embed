@@ -46,7 +46,7 @@ def build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_hea
     return model
 
 
-def train(model, dataset, train_steps, eval_every=500, batch_size=32, test_frac=0.1):
+def train(model, dataset, train_steps, trainer_cls=Trainer, eval_every=500, batch_size=32, test_frac=0.1):
     metric = evaluate.load("accuracy")
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
@@ -77,13 +77,13 @@ def train(model, dataset, train_steps, eval_every=500, batch_size=32, test_frac=
     acc = trainer.evaluate()['eval_accuracy']
     return acc
 
-def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs):
+def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, trainer_cls=Trainer, **kwargs):
     id_dataset, ood_datasets = dataset.pivot(holdout_words)
-    train_acc = train(model, id_dataset, train_steps, **kwargs)
+    train_acc = train(model, id_dataset, train_steps, trainer_cls=trainer_cls, **kwargs)
     accs = {}
     for word_idx, word_dataset in ood_datasets.items():
         finetune_model = copy.deepcopy(model)
-        eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=125, test_frac=0.5, **kwargs)
+        eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=125, test_frac=0.5, trainer_cls=trainer_cls, **kwargs)
         print("%s Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], eval_acc))
         del finetune_model
         accs[word_idx] = eval_acc
@@ -91,7 +91,7 @@ def fewshot(model, dataset, holdout_words, train_steps, finetune_steps, **kwargs
 
 
 
-def run_fewshot(dataset_name, vocab_size, top_words, use_sym, n_symbols, pattern_length, holdout_inds=None, beta=1., lr=5e-5, max_steps=2000, max_size=-1, batch_size=32,
+def run_fewshot(dataset_name, use_sym='none', n_symbols=2000, pattern_length=8, holdout_inds=None, beta=1., lr=5e-5, max_steps=2000, batch_size=32,
         latent_size = 512, hidden_size = 1024, num_layers = 4, num_heads = 16, max_length = 128, dropout = 0.1, activation_fct = 'gelu'):
     sym = None
     trainer_cls=Trainer
@@ -101,7 +101,7 @@ def run_fewshot(dataset_name, vocab_size, top_words, use_sym, n_symbols, pattern
         sym = SymbolicEmbeddingsVQ(dataset.vocab_size, n_symbols, pattern_length, latent_size // pattern_length, beta)
         trainer_cls=VQTrainer
 
-    model = build_simple_model(vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
+    model = build_simple_model(dataset.vocab_size, latent_size, hidden_size, num_layers, num_heads, max_length, dropout, activation_fct, num_labels, sym)
     tokenizer = dataset.tokenizer
 
     if holdout_inds is not None:
