@@ -81,11 +81,12 @@ def train(model, dataset, train_steps, trainer_cls=Trainer, eval_every=500, batc
     final_acc = trainer.evaluate()['eval_accuracy']
     return initial_acc, final_acc
 
-def fewshot(model, ood_datasets, finetune_steps, lr=5e-5, trainer_cls=Trainer, eval_every=125, **kwargs):
+def fewshot(model, ood_datasets, finetune_steps, lr=5e-5, trainer_cls=Trainer, eval_every=125, freeze=True, **kwargs):
     accs = {}
     for word_idx, word_dataset in ood_datasets.items():
         finetune_model = copy.deepcopy(model)
-        model.freeze_model()
+        if freeze:
+            finetune_model.freeze_model()
         initial_acc, eval_acc = train(finetune_model, word_dataset, finetune_steps, eval_every=eval_every, test_frac=0.5, trainer_cls=trainer_cls, **kwargs)
         print("\n%s: \tInitial Accuracy: %f\tFinal Accuracy: %f" % (dataset.tokenizer.convert_ids_to_tokens([word_idx])[0], initial_acc, eval_acc))
         del finetune_model
@@ -182,5 +183,7 @@ ordered_inds = [37, 106, 87, 98, 55]
 holdout_inds = sorted_indices[ordered_inds]
 
 
+#base_model, id_dataset, ood_datasets, base_trainer_cls = run_pretrain(dataset, use_sym='none')
 
+#vq_model, id_dataset, ood_datasets, vq_trainer_cls = run_pretrain(dataset, use_sym='vq', pattern_length=16, n_symbols=500)
 
