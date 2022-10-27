@@ -1,7 +1,7 @@
 
 from chem.model_utils import SymbolicEmbeddingBlock
 from ocpmodels.common.registry import registry
-from ocpmodels.models import DimeNetPlusPlus, DimeNetPlusPlusWrap
+from ocpmodels.models.dimenet_plus_plus import DimeNetPlusPlus, DimeNetPlusPlusWrap
 from torch_geometric.nn.acts import swish
 
 from embed import SymbolicEmbeddingsGumbel, SymbolicEmbeddingsVQ
