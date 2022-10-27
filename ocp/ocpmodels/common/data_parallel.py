@@ -9,7 +9,7 @@ import heapq
 import logging
 from itertools import chain
 from pathlib import Path
-from typing import List, Literal, Protocol, Union, runtime_checkable
+from typing import List, Protocol, Union, runtime_checkable
 
 import numba
 import numpy as np
@@ -140,7 +140,7 @@ class _HasMetadata(Protocol):
 
 
 class BalancedBatchSampler(Sampler):
-    def _load_dataset(self, dataset, mode: Literal["atoms", "neighbors"]):
+    def _load_dataset(self, dataset, mode):
         errors: List[str] = []
         if not isinstance(dataset, _HasMetadata):
             errors.append(
