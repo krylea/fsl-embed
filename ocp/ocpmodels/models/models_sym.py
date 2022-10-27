@@ -34,7 +34,7 @@ class DimeNetPlusPlusSymbolic(DimeNetPlusPlusWrap):
     def __init__(self,
         n_symbols, 
         pattern_length, 
-        symbol_dim
+        symbol_dim,
         num_atoms,
         bond_feat_dim,  # not used
         num_targets,
