@@ -61,7 +61,7 @@ class DimeNetPlusPlusSymbolic(DimeNetPlusPlusWrap):
             num_targets,
             use_pbc=use_pbc,
             regress_forces=regress_forces,
-            hidden_channels=pattern_length * symbol_dim,
+            hidden_channels=hidden_channels,
             num_blocks=num_blocks,
             int_emb_size=int_emb_size,
             basis_emb_size=basis_emb_size,
@@ -75,4 +75,4 @@ class DimeNetPlusPlusSymbolic(DimeNetPlusPlusWrap):
             num_after_skip=num_after_skip,
             num_output_layers=num_output_layers
         )
-        self.emb = SymbolicEmbeddingBlock(n_symbols, pattern_length, symbol_dim, num_radial, act, mode=mode)
+        self.emb = SymbolicEmbeddingBlock(n_symbols, pattern_length, hidden_channels // pattern_length, num_radial, act, mode=mode)
