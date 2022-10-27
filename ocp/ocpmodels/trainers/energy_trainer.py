@@ -6,14 +6,19 @@ LICENSE file in the root directory of this source tree.
 """
 
 import logging
+import os
+from collections import defaultdict
 
+import numpy as np
 import torch
 import torch_geometric
+from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
 from ocpmodels.common import distutils
+from ocpmodels.common.data_parallel import ParallelCollater
 from ocpmodels.common.registry import registry
-from ocpmodels.modules.scaling.util import ensure_fitted
+from ocpmodels.modules.normalizer import Normalizer
 from ocpmodels.trainers.base_trainer import BaseTrainer
 
 
@@ -37,6 +42,8 @@ class EnergyTrainer(BaseTrainer):
         run_dir (str, optional): Path to the run directory where logs are to be saved.
             (default: :obj:`None`)
         is_debug (bool, optional): Run in debug mode.
+            (default: :obj:`False`)
+        is_vis (bool, optional): Run in debug mode.
             (default: :obj:`False`)
         is_hpo (bool, optional): Run hyperparameter optimization with Ray Tune.
             (default: :obj:`False`)
@@ -65,6 +72,7 @@ class EnergyTrainer(BaseTrainer):
         timestamp_id=None,
         run_dir=None,
         is_debug=False,
+        is_vis=False,
         is_hpo=False,
         print_every=100,
         seed=None,
@@ -73,7 +81,6 @@ class EnergyTrainer(BaseTrainer):
         amp=False,
         cpu=False,
         slurm={},
-        noddp=False,
     ):
         super().__init__(
             task=task,
@@ -85,6 +92,7 @@ class EnergyTrainer(BaseTrainer):
             timestamp_id=timestamp_id,
             run_dir=run_dir,
             is_debug=is_debug,
+            is_vis=is_vis,
             is_hpo=is_hpo,
             print_every=print_every,
             seed=seed,
@@ -94,19 +102,98 @@ class EnergyTrainer(BaseTrainer):
             cpu=cpu,
             name="is2re",
             slurm=slurm,
-            noddp=noddp,
         )
 
     def load_task(self):
+        assert (
+            self.config["task"]["dataset"] == "single_point_lmdb"
+        ), "EnergyTrainer requires single_point_lmdb dataset"
+
         logging.info(f"Loading dataset: {self.config['task']['dataset']}")
+
+        self.parallel_collater = ParallelCollater(
+            1 if not self.cpu else 0,
+            self.config["model_attributes"].get("otf_graph", False),
+        )
+
+        self.val_loader = self.test_loader = self.train_loader = None
+        self.val_sampler = None
+
+        if self.config.get("dataset", None):
+            self.train_dataset = registry.get_dataset_class(
+                self.config["task"]["dataset"]
+            )(self.config["dataset"])
+            self.train_sampler = DistributedSampler(
+                self.train_dataset,
+                num_replicas=distutils.get_world_size(),
+                rank=distutils.get_rank(),
+                shuffle=True,
+            )
+            self.train_loader = DataLoader(
+                self.train_dataset,
+                batch_size=self.config["optim"]["batch_size"],
+                collate_fn=self.parallel_collater,
+                num_workers=self.config["optim"]["num_workers"],
+                pin_memory=True,
+                sampler=self.train_sampler,
+            )
+
+        if self.config.get("val_dataset", None):
+            self.val_dataset = registry.get_dataset_class(
+                self.config["task"]["dataset"]
+            )(self.config["val_dataset"])
+            self.val_sampler = DistributedSampler(
+                self.val_dataset,
+                num_replicas=distutils.get_world_size(),
+                rank=distutils.get_rank(),
+                shuffle=False,
+            )
+            self.val_loader = DataLoader(
+                self.val_dataset,
+                self.config["optim"].get("eval_batch_size", 64),
+                collate_fn=self.parallel_collater,
+                num_workers=self.config["optim"]["num_workers"],
+                pin_memory=True,
+                sampler=self.val_sampler,
+            )
+        if self.config.get("test_dataset", None):
+            self.test_dataset = registry.get_dataset_class(
+                self.config["task"]["dataset"]
+            )(self.config["test_dataset"])
+            self.test_sampler = DistributedSampler(
+                self.test_dataset,
+                num_replicas=distutils.get_world_size(),
+                rank=distutils.get_rank(),
+                shuffle=False,
+            )
+            self.test_loader = DataLoader(
+                self.test_dataset,
+                self.config["optim"].get("eval_batch_size", 64),
+                collate_fn=self.parallel_collater,
+                num_workers=self.config["optim"]["num_workers"],
+                pin_memory=True,
+                sampler=self.test_sampler,
+            )
+
         self.num_targets = 1
+
+        # Normalizer for the dataset.
+        # Compute mean, std of training set labels.
+        self.normalizers = {}
+        if self.normalizer.get("normalize_labels", False):
+            if "target_mean" in self.normalizer:
+                self.normalizers["target"] = Normalizer(
+                    mean=self.normalizer["target_mean"],
+                    std=self.normalizer["target_std"],
+                    device=self.device,
+                )
+            else:
+                raise NotImplementedError
 
     @torch.no_grad()
     def predict(
         self, loader, per_image=True, results_file=None, disable_tqdm=False
     ):
-        ensure_fitted(self._unwrapped_model)
-
         if distutils.is_master() and not disable_tqdm:
             logging.info("Predicting on test.")
         assert isinstance(
@@ -162,15 +249,13 @@ class EnergyTrainer(BaseTrainer):
         return predictions
 
     def train(self, disable_eval_tqdm=False):
-        ensure_fitted(self._unwrapped_model, warn=True)
-
         eval_every = self.config["optim"].get(
             "eval_every", len(self.train_loader)
         )
         primary_metric = self.config["task"].get(
             "primary_metric", self.evaluator.task_primary_metric[self.name]
         )
-        self.best_val_metric = 1e9
+        self.best_val_mae = 1e9
 
         # Calculate start_epoch from step instead of loading the epoch number
         # to prevent inconsistencies due to different batch size in checkpoint.
@@ -246,15 +331,18 @@ class EnergyTrainer(BaseTrainer):
                     if self.val_loader is not None:
                         val_metrics = self.validate(
                             split="val",
+                            epoch=self.epoch
+                            - 1
+                            + (i + 1) / len(self.train_loader),
                             disable_tqdm=disable_eval_tqdm,
                         )
                         if (
                             val_metrics[
                                 self.evaluator.task_primary_metric[self.name]
                             ]["metric"]
-                            < self.best_val_metric
+                            < self.best_val_mae
                         ):
-                            self.best_val_metric = val_metrics[
+                            self.best_val_mae = val_metrics[
                                 self.evaluator.task_primary_metric[self.name]
                             ]["metric"]
                             self.save(
@@ -277,6 +365,9 @@ class EnergyTrainer(BaseTrainer):
                                 val_metrics,
                             )
 
+                    else:
+                        self.save(self.epoch, self.step, self.metrics)
+
                 if self.scheduler.scheduler_type == "ReduceLROnPlateau":
                     if self.step % eval_every == 0:
                         self.scheduler.step(
@@ -288,9 +379,9 @@ class EnergyTrainer(BaseTrainer):
             torch.cuda.empty_cache()
 
         self.train_dataset.close_db()
-        if self.config.get("val_dataset", False):
+        if "val_dataset" in self.config:
             self.val_dataset.close_db()
-        if self.config.get("test_dataset", False):
+        if "test_dataset" in self.config:
             self.test_dataset.close_db()
 
     def _forward(self, batch_list):

@@ -251,7 +251,6 @@ class ForceNet(BaseModel):
         decoder_activation_str="swish",
         training=True,
         otf_graph=False,
-        use_pbc=True,
     ):
 
         super(ForceNet, self).__init__()
@@ -289,8 +288,6 @@ class ForceNet(BaseModel):
         self.num_layers = num_interactions
         self.max_n = max_n
         self.activation_str = activation_str
-        self.use_pbc = use_pbc
-        self.max_neighbors = 50
 
         if self.ablation == "edgelinear":
             depth_mlp_edge = 0
@@ -437,18 +434,26 @@ class ForceNet(BaseModel):
         else:
             raise RuntimeError("Undefined feature type for atom")
 
-        (
-            edge_index,
-            edge_dist,
-            edge_vec,
-            cell_offsets,
-            _,  # cell offset distances
-            neighbors,
-        ) = self.generate_graph(data)
+        if self.otf_graph:
+            edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                data, self.cutoff, 50, data.pos.device
+            )
+            data.edge_index = edge_index
+            data.cell_offsets = cell_offsets
+            data.neighbors = neighbors
 
-        data.edge_index = edge_index
-        data.cell_offsets = cell_offsets
-        data.neighbors = neighbors
+        out = get_pbc_distances(
+            pos,
+            data.edge_index,
+            data.cell,
+            data.cell_offsets,
+            data.neighbors,
+            return_distance_vec=True,
+        )
+
+        edge_index = out["edge_index"]
+        edge_dist = out["distances"]
+        edge_vec = out["distance_vec"]
 
         if self.pbc_apply_sph_harm:
             edge_vec_normalized = edge_vec / edge_dist.view(-1, 1)

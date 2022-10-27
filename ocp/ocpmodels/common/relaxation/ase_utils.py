@@ -11,7 +11,6 @@ Environment (ASE)
 """
 import copy
 import logging
-import os
 
 import torch
 import yaml
@@ -26,7 +25,7 @@ from ocpmodels.common.utils import (
     setup_imports,
     setup_logging,
 )
-from ocpmodels.datasets import data_list_collater
+from ocpmodels.datasets.trajectory_lmdb import data_list_collater
 from ocpmodels.preprocessing import AtomsToGraphs
 
 
@@ -66,24 +65,16 @@ class OCPCalculator(Calculator):
     implemented_properties = ["energy", "forces"]
 
     def __init__(
-        self,
-        config_yml=None,
-        checkpoint=None,
-        trainer=None,
-        cutoff=6,
-        max_neighbors=50,
-        device="cpu",
+        self, config_yml, checkpoint=None, cutoff=6, max_neighbors=50
     ):
         """
         OCP-ASE Calculator
 
         Args:
             config_yml (str):
-                Path to yaml config or could be a dictionary.
+                Path to yaml config.
             checkpoint (str):
                 Path to trained checkpoint.
-            trainer (str):
-                OCP trainer to be used. "forces" for S2EF, "energy" for IS2RE.
             cutoff (int):
                 Cutoff radius to be used for data preprocessing.
             max_neighbors (int):
@@ -93,74 +84,27 @@ class OCPCalculator(Calculator):
         setup_logging()
         Calculator.__init__(self)
 
-        # Either the config path or the checkpoint path needs to be provided
-        assert config_yml or checkpoint is not None
-
-        if config_yml is not None:
-            if isinstance(config_yml, str):
-                config = yaml.safe_load(open(config_yml, "r"))
-
-                if "includes" in config:
-                    for include in config["includes"]:
-                        # Change the path based on absolute path of config_yml
-                        path = os.path.join(
-                            config_yml.split("configs")[0], include
-                        )
-                        include_config = yaml.safe_load(open(path, "r"))
-                        config.update(include_config)
-            else:
-                config = config_yml
-            # Only keeps the train data that might have normalizer values
-            if isinstance(config["dataset"], list):
-                config["dataset"] = config["dataset"][0]
-            elif isinstance(config["dataset"], dict):
-                config["dataset"] = config["dataset"].get("train", None)
-        else:
-            # Loads the config from the checkpoint directly
-            config = torch.load(checkpoint, map_location=torch.device(device))[
-                "config"
-            ]
-        if trainer is not None:  # passing the arg overrides everything else
-            config["trainer"] = trainer
-        else:
-            if "trainer" not in config:  # older checkpoint
-                if config["task"]["dataset"] == "trajectory_lmdb":
-                    config["trainer"] = "forces"
-                elif config["task"]["dataset"] == "single_point_lmdb":
-                    config["trainer"] = "energy"
-                else:
-                    logging.warning(
-                        "Unable to identify OCP trainer, defaulting to `forces`. Specify the `trainer` argument into OCPCalculator if otherwise."
-                    )
-                    config["trainer"] = "forces"
-
-        config["model_attributes"]["name"] = config.pop("model")
-        config["model"] = config["model_attributes"]
-
-        # Calculate the edge indices on the fly
-        config["model"]["otf_graph"] = True
+        config = yaml.safe_load(open(config_yml, "r"))
+        if "includes" in config:
+            for include in config["includes"]:
+                include_config = yaml.safe_load(open(include, "r"))
+                config.update(include_config)
 
         # Save config so obj can be transported over network (pkl)
         self.config = copy.deepcopy(config)
         self.config["checkpoint"] = checkpoint
 
-        if "normalizer" not in config:
-            del config["dataset"]["src"]
-            config["normalizer"] = config["dataset"]
-
         self.trainer = registry.get_trainer_class(
-            config.get("trainer", "energy")
+            config.get("trainer", "simple")
         )(
             task=config["task"],
             model=config["model"],
-            dataset=None,
-            normalizer=config["normalizer"],
+            dataset=config["dataset"],
             optimizer=config["optim"],
             identifier="",
             slurm=config.get("slurm", {}),
-            local_rank=config.get("local_rank", device),
+            local_rank=config.get("local_rank", 0),
             is_debug=config.get("is_debug", True),
-            cpu=True if device == "cpu" else False,
         )
 
         if checkpoint is not None:
@@ -172,8 +116,10 @@ class OCPCalculator(Calculator):
             r_energy=False,
             r_forces=False,
             r_distances=False,
-            r_edges=False,
         )
+
+    def train(self):
+        self.trainer.train()
 
     def load_checkpoint(self, checkpoint_path):
         """
@@ -191,7 +137,7 @@ class OCPCalculator(Calculator):
     def calculate(self, atoms, properties, system_changes):
         Calculator.calculate(self, atoms, properties, system_changes)
         data_object = self.a2g.convert(atoms)
-        batch = data_list_collater([data_object], otf_graph=True)
+        batch = data_list_collater([data_object])
 
         predictions = self.trainer.predict(
             batch, per_image=False, disable_tqdm=True

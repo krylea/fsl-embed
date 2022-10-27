@@ -51,6 +51,17 @@ class Flags:
             help="Directory to store checkpoint/log/result directory",
         )
         self.parser.add_argument(
+            "--vis",
+            action="store_true",
+            help="Whether to visualize a few extra things",
+        )
+        self.parser.add_argument(
+            "--num-workers",
+            default=0,
+            type=int,
+            help="Number of dataloader workers (default: 0 i.e. use main proc)",
+        )
+        self.parser.add_argument(
             "--print-every",
             default=10,
             type=int,
@@ -129,15 +140,6 @@ class Flags:
         )
         self.parser.add_argument(
             "--local_rank", default=0, type=int, help="Local rank"
-        )
-        self.parser.add_argument(
-            "--no-ddp", action="store_true", help="Do not use DDP"
-        )
-        self.parser.add_argument(
-            "--gp-gpus",
-            type=int,
-            default=None,
-            help="Number of GPUs to split the graph over (only for Graph Parallel training)",
         )
 
 

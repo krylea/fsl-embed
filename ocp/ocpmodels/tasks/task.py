@@ -5,7 +5,6 @@ This source code is licensed under the MIT license found in the
 LICENSE file in the root directory of this source tree.
 """
 
-import logging
 import os
 
 from ocpmodels.common.registry import registry
@@ -32,28 +31,10 @@ class BaseTask:
 
 @registry.register_task("train")
 class TrainTask(BaseTask):
-    def _process_error(self, e: RuntimeError):
-        e_str = str(e)
-        if (
-            "find_unused_parameters" in e_str
-            and "torch.nn.parallel.DistributedDataParallel" in e_str
-        ):
-            for name, parameter in self.trainer.model.named_parameters():
-                if parameter.requires_grad and parameter.grad is None:
-                    logging.warning(
-                        f"Parameter {name} has no gradient. Consider removing it from the model."
-                    )
-
     def run(self):
-        try:
-            self.trainer.train(
-                disable_eval_tqdm=self.config.get(
-                    "hide_eval_progressbar", False
-                )
-            )
-        except RuntimeError as e:
-            self._process_error(e)
-            raise e
+        self.trainer.train(
+            disable_eval_tqdm=self.config.get("hide_eval_progressbar", False)
+        )
 
 
 @registry.register_task("predict")

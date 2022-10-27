@@ -9,7 +9,6 @@ import torch
 from torch import nn
 from torch_geometric.nn import DimeNet, radius_graph
 from torch_scatter import scatter
-from torch_sparse import SparseTensor
 
 from ocpmodels.common.registry import registry
 from ocpmodels.common.utils import (
@@ -17,11 +16,10 @@ from ocpmodels.common.utils import (
     get_pbc_distances,
     radius_graph_pbc,
 )
-from ocpmodels.models.base import BaseModel
 
 
 @registry.register_model("dimenet")
-class DimeNetWrap(DimeNet, BaseModel):
+class DimeNetWrap(DimeNet):
     r"""Wrapper around the directional message passing neural network (DimeNet) from the
     `"Directional Message Passing for Molecular Graphs"
     <https://arxiv.org/abs/2003.03123>`_ paper.
@@ -91,7 +89,6 @@ class DimeNetWrap(DimeNet, BaseModel):
         self.cutoff = cutoff
         self.otf_graph = otf_graph
         self.max_angles_per_image = max_angles_per_image
-        self.max_neighbors = 50
 
         super(DimeNetWrap, self).__init__(
             hidden_channels=hidden_channels,
@@ -107,57 +104,41 @@ class DimeNetWrap(DimeNet, BaseModel):
             num_output_layers=num_output_layers,
         )
 
-    def triplets(self, edge_index, cell_offsets, num_nodes):
-        row, col = edge_index  # j->i
-
-        value = torch.arange(row.size(0), device=row.device)
-        adj_t = SparseTensor(
-            row=col, col=row, value=value, sparse_sizes=(num_nodes, num_nodes)
-        )
-        adj_t_row = adj_t[row]
-        num_triplets = adj_t_row.set_value(None).sum(dim=1).to(torch.long)
-
-        # Node indices (k->j->i) for triplets.
-        idx_i = col.repeat_interleave(num_triplets)
-        idx_j = row.repeat_interleave(num_triplets)
-        idx_k = adj_t_row.storage.col()
-
-        # Edge indices (k->j, j->i) for triplets.
-        idx_kj = adj_t_row.storage.value()
-        idx_ji = adj_t_row.storage.row()
-
-        # Remove self-loop triplets d->b->d
-        # Check atom as well as cell offset
-        cell_offset_kji = cell_offsets[idx_kj] + cell_offsets[idx_ji]
-        mask = (idx_i != idx_k) | torch.any(cell_offset_kji != 0, dim=-1)
-
-        idx_i, idx_j, idx_k = idx_i[mask], idx_j[mask], idx_k[mask]
-        idx_kj, idx_ji = idx_kj[mask], idx_ji[mask]
-
-        return col, row, idx_i, idx_j, idx_k, idx_kj, idx_ji
-
     @conditional_grad(torch.enable_grad())
     def _forward(self, data):
         pos = data.pos
         batch = data.batch
-        (
-            edge_index,
-            dist,
-            _,
-            cell_offsets,
-            offsets,
-            neighbors,
-        ) = self.generate_graph(data)
 
-        data.edge_index = edge_index
-        data.cell_offsets = cell_offsets
-        data.neighbors = neighbors
-        j, i = edge_index
+        if self.otf_graph:
+            edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                data, self.cutoff, 50, data.pos.device
+            )
+            data.edge_index = edge_index
+            data.cell_offsets = cell_offsets
+            data.neighbors = neighbors
+
+        if self.use_pbc:
+            out = get_pbc_distances(
+                pos,
+                data.edge_index,
+                data.cell,
+                data.cell_offsets,
+                data.neighbors,
+                return_offsets=True,
+            )
+
+            edge_index = out["edge_index"]
+            dist = out["distances"]
+            offsets = out["offsets"]
+
+            j, i = edge_index
+        else:
+            edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
+            j, i = edge_index
+            dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
 
         _, _, idx_i, idx_j, idx_k, idx_kj, idx_ji = self.triplets(
-            edge_index,
-            data.cell_offsets,
-            num_nodes=data.atomic_numbers.size(0),
+            edge_index, num_nodes=data.atomic_numbers.size(0)
         )
 
         # Cap no. of triplets during training.

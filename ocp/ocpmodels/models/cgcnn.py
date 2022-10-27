@@ -16,7 +16,7 @@ from ocpmodels.common.utils import (
     get_pbc_distances,
     radius_graph_pbc,
 )
-from ocpmodels.datasets.embeddings import KHOT_EMBEDDINGS, QMOF_KHOT_EMBEDDINGS
+from ocpmodels.datasets.embeddings import KHOT_EMBEDDINGS
 from ocpmodels.models.base import BaseModel
 
 
@@ -66,27 +66,18 @@ class CGCNN(BaseModel):
         otf_graph=False,
         cutoff=6.0,
         num_gaussians=50,
-        embeddings="khot",
     ):
         super(CGCNN, self).__init__(num_atoms, bond_feat_dim, num_targets)
         self.regress_forces = regress_forces
         self.use_pbc = use_pbc
         self.cutoff = cutoff
         self.otf_graph = otf_graph
-        self.max_neighbors = 50
+
         # Get CGCNN atom embeddings
-        if embeddings == "khot":
-            embeddings = KHOT_EMBEDDINGS
-        elif embeddings == "qmof":
-            embeddings = QMOF_KHOT_EMBEDDINGS
-        else:
-            raise ValueError(
-                'embedding mnust be either "khot" for original CGCNN K-hot elemental embeddings or "qmof" for QMOF K-hot elemental embeddings'
-            )
-        self.embedding = torch.zeros(100, len(embeddings[1]))
+        self.embedding = torch.zeros(100, 92)
         for i in range(100):
-            self.embedding[i] = torch.tensor(embeddings[i + 1])
-        self.embedding_fc = nn.Linear(len(embeddings[1]), atom_embedding_size)
+            self.embedding[i] = torch.tensor(KHOT_EMBEDDINGS[i + 1])
+        self.embedding_fc = nn.Linear(92, atom_embedding_size)
 
         self.convs = nn.ModuleList(
             [
@@ -121,16 +112,34 @@ class CGCNN(BaseModel):
             self.embedding = self.embedding.to(data.atomic_numbers.device)
         data.x = self.embedding[data.atomic_numbers.long() - 1]
 
-        (
-            edge_index,
-            distances,
-            distance_vec,
-            cell_offsets,
-            _,  # cell offset distances
-            neighbors,
-        ) = self.generate_graph(data)
+        pos = data.pos
 
-        data.edge_index = edge_index
+        if self.otf_graph:
+            edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                data, self.cutoff, 50, data.pos.device
+            )
+            data.edge_index = edge_index
+            data.cell_offsets = cell_offsets
+            data.neighbors = neighbors
+
+        if self.use_pbc:
+            out = get_pbc_distances(
+                pos,
+                data.edge_index,
+                data.cell,
+                data.cell_offsets,
+                data.neighbors,
+            )
+
+            data.edge_index = out["edge_index"]
+            distances = out["distances"]
+        else:
+            data.edge_index = radius_graph(
+                data.pos, r=self.cutoff, batch=data.batch
+            )
+            row, col = data.edge_index
+            distances = (pos[row] - pos[col]).norm(dim=-1)
+
         data.edge_attr = self.distance_expansion(distances)
         # Forward pass through the network
         mol_feats = self._convolve(data)

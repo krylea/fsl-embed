@@ -9,26 +9,25 @@ from typing import Optional
 
 import numpy as np
 import torch
-from torch_geometric.nn import radius_graph
 from torch_scatter import scatter
 from torch_sparse import SparseTensor
 
 from ocpmodels.common.registry import registry
 from ocpmodels.common.utils import (
-    compute_neighbors,
     conditional_grad,
     get_pbc_distances,
     radius_graph_pbc,
 )
-from ocpmodels.models.base import BaseModel
-from ocpmodels.modules.scaling.compat import load_scales_compat
 
 from .layers.atom_update_block import OutputBlock
 from .layers.base_layers import Dense
 from .layers.efficient import EfficientInteractionDownProjection
 from .layers.embedding_block import AtomEmbedding, EdgeEmbedding
-from .layers.interaction_block import InteractionBlockTripletsOnly
+from .layers.interaction_block import (
+    InteractionBlockTripletsOnly,
+)
 from .layers.radial_basis import RadialBasis
+from .layers.scaling import AutomaticFit
 from .layers.spherical_basis import CircularBasisLayer
 from .utils import (
     inner_product_normalized,
@@ -39,7 +38,7 @@ from .utils import (
 
 
 @registry.register_model("gemnet_t")
-class GemNetT(BaseModel):
+class GemNetT(torch.nn.Module):
     """
     GemNet-T, triplets-only variant of GemNet
 
@@ -130,10 +129,8 @@ class GemNetT(BaseModel):
         cbf: dict = {"name": "spherical_harmonics"},
         extensive: bool = True,
         otf_graph: bool = False,
-        use_pbc: bool = True,
         output_init: str = "HeOrthogonal",
         activation: str = "swish",
-        num_elements: int = 83,
         scale_file: Optional[str] = None,
     ):
         super().__init__()
@@ -150,7 +147,8 @@ class GemNetT(BaseModel):
 
         self.regress_forces = regress_forces
         self.otf_graph = otf_graph
-        self.use_pbc = use_pbc
+
+        AutomaticFit.reset()  # make sure that queue is empty (avoid potential error)
 
         # GemNet variants
         self.direct_forces = direct_forces
@@ -205,7 +203,7 @@ class GemNetT(BaseModel):
         ### ------------------------------------------------------------------------------------- ###
 
         # Embedding block
-        self.atom_emb = AtomEmbedding(emb_size_atom, num_elements)
+        self.atom_emb = AtomEmbedding(emb_size_atom)
         self.edge_emb = EdgeEmbedding(
             emb_size_atom, num_radial, emb_size_edge, activation=activation
         )
@@ -229,6 +227,7 @@ class GemNetT(BaseModel):
                     num_concat=num_concat,
                     num_atom=num_atom,
                     activation=activation,
+                    scale_file=scale_file,
                     name=f"IntBlock_{i+1}",
                 )
             )
@@ -244,6 +243,7 @@ class GemNetT(BaseModel):
                     activation=activation,
                     output_init=output_init,
                     direct_forces=direct_forces,
+                    scale_file=scale_file,
                     name=f"OutBlock_{i}",
                 )
             )
@@ -252,13 +252,11 @@ class GemNetT(BaseModel):
         self.int_blocks = torch.nn.ModuleList(int_blocks)
 
         self.shared_parameters = [
-            (self.mlp_rbf3.linear.weight, self.num_blocks),
-            (self.mlp_cbf3.weight, self.num_blocks),
-            (self.mlp_rbf_h.linear.weight, self.num_blocks),
-            (self.mlp_rbf_out.linear.weight, self.num_blocks + 1),
+            (self.mlp_rbf3, self.num_blocks),
+            (self.mlp_cbf3, self.num_blocks),
+            (self.mlp_rbf_h, self.num_blocks),
+            (self.mlp_rbf_out, self.num_blocks + 1),
         ]
-
-        load_scales_compat(self, scale_file)
 
     def get_triplets(self, edge_index, num_atoms):
         """
@@ -426,17 +424,33 @@ class GemNetT(BaseModel):
     def generate_interaction_graph(self, data):
         num_atoms = data.atomic_numbers.size(0)
 
-        (
+        if self.otf_graph:
+            edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                data, self.cutoff, self.max_neighbors
+            )
+        else:
+            edge_index = data.edge_index
+            cell_offsets = data.cell_offsets
+            neighbors = data.neighbors
+
+        # Switch the indices, so the second one becomes the target index,
+        # over which we can efficiently aggregate.
+        out = get_pbc_distances(
+            data.pos,
             edge_index,
-            D_st,
-            distance_vec,
+            data.cell,
             cell_offsets,
-            _,  # cell offset distances
             neighbors,
-        ) = self.generate_graph(data)
+            return_offsets=True,
+            return_distance_vec=True,
+        )
+
+        edge_index = out["edge_index"]
+        D_st = out["distances"]
         # These vectors actually point in the opposite direction.
         # But we want to use col as idx_t for efficient aggregation.
-        V_st = -distance_vec / D_st[:, None]
+        V_st = -out["distance_vec"] / D_st[:, None]
+        # offsets_ca = -out["offsets"]  # a - c + offset
 
         # Mask interaction edges if required
         if self.otf_graph or np.isclose(self.cutoff, 6):

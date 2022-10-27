@@ -71,7 +71,7 @@ class LBFGS:
         if forces is None:
             return False
         max_forces_ = scatter(
-            (forces**2).sum(axis=1).sqrt(), self.atoms.batch, reduce="max"
+            (forces ** 2).sum(axis=1).sqrt(), self.atoms.batch, reduce="max"
         )
         max_forces = max_forces_[self.atoms.batch]
         update_mask = torch.logical_and(
@@ -95,7 +95,7 @@ class LBFGS:
         if self.traj_dir:
             self.traj_dir.mkdir(exist_ok=True, parents=True)
             trajectories = [
-                ase.io.Trajectory(self.traj_dir / f"{name}.traj_tmp", mode="w")
+                ase.io.Trajectory(self.traj_dir / f"{name}.traj", mode="a")
                 for name in self.traj_names
             ]
 
@@ -121,16 +121,13 @@ class LBFGS:
                 iteration, update_mask, f0, fmax
             )
             converged = torch.all(torch.logical_not(update_mask))
-        # GPU memory usage as per nvidia-smi seems to gradually build up as
-        # batches are processed. This releases unoccupied cached memory.
-        torch.cuda.empty_cache()
+            # GPU memory usage as per nvidia-smi seems to gradually build up as
+            # batches are processed. This releases unoccupied cached memory.
+            torch.cuda.empty_cache()
 
         if trajectories is not None:
             for traj in trajectories:
                 traj.close()
-            for name in self.traj_names:
-                traj_fl = Path(self.traj_dir / f"{name}.traj_tmp", mode="w")
-                traj_fl.rename(traj_fl.with_suffix(".traj"))
 
         self.atoms.y, self.atoms.force = self.get_forces(
             apply_constraint=False
@@ -201,7 +198,7 @@ class TorchCalc:
 
     def update_graph(self, atoms):
         edge_index, cell_offsets, num_neighbors = radius_graph_pbc(
-            atoms, 6, 50
+            atoms, 6, 50, atoms.pos.device
         )
         atoms.edge_index = edge_index
         atoms.cell_offsets = cell_offsets

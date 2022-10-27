@@ -138,9 +138,6 @@ class AtomsToGraphs:
         positions = torch.Tensor(atoms.get_positions())
         cell = torch.Tensor(atoms.get_cell()).view(1, 3, 3)
         natoms = positions.shape[0]
-        # initialized to torch.zeros(natoms) if tags missing.
-        # https://wiki.fysik.dtu.dk/ase/_modules/ase/atoms.html#Atoms.get_tags
-        tags = torch.Tensor(atoms.get_tags())
 
         # put the minimum data in torch geometric data object
         data = Data(
@@ -148,7 +145,6 @@ class AtomsToGraphs:
             pos=positions,
             atomic_numbers=atomic_numbers,
             natoms=natoms,
-            tags=tags,
         )
 
         # optionally include other properties

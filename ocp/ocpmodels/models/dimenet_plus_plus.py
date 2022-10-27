@@ -53,9 +53,6 @@ from ocpmodels.common.utils import (
     get_pbc_distances,
     radius_graph_pbc,
 )
-from ocpmodels.models.base import BaseModel
-
-from chem.model_utils import SymbolicEmbeddingBlock
 
 try:
     import sympy as sym
@@ -304,7 +301,7 @@ class DimeNetPlusPlus(torch.nn.Module):
         for interaction in self.interaction_blocks:
             interaction.reset_parameters()
 
-    def triplets(self, edge_index, cell_offsets, num_nodes):
+    def triplets(self, edge_index, num_nodes):
         row, col = edge_index  # j->i
 
         value = torch.arange(row.size(0), device=row.device)
@@ -318,18 +315,12 @@ class DimeNetPlusPlus(torch.nn.Module):
         idx_i = col.repeat_interleave(num_triplets)
         idx_j = row.repeat_interleave(num_triplets)
         idx_k = adj_t_row.storage.col()
-
-        # Edge indices (k->j, j->i) for triplets.
-        idx_kj = adj_t_row.storage.value()
-        idx_ji = adj_t_row.storage.row()
-
-        # Remove self-loop triplets d->b->d
-        # Check atom as well as cell offset
-        cell_offset_kji = cell_offsets[idx_kj] + cell_offsets[idx_ji]
-        mask = (idx_i != idx_k) | torch.any(cell_offset_kji != 0, dim=-1)
-
+        mask = idx_i != idx_k  # Remove i == k triplets.
         idx_i, idx_j, idx_k = idx_i[mask], idx_j[mask], idx_k[mask]
-        idx_kj, idx_ji = idx_kj[mask], idx_ji[mask]
+
+        # Edge indices (k-j, j->i) for triplets.
+        idx_kj = adj_t_row.storage.value()[mask]
+        idx_ji = adj_t_row.storage.row()[mask]
 
         return col, row, idx_i, idx_j, idx_k, idx_kj, idx_ji
 
@@ -339,7 +330,7 @@ class DimeNetPlusPlus(torch.nn.Module):
 
 
 @registry.register_model("dimenetplusplus")
-class DimeNetPlusPlusWrap(DimeNetPlusPlus, BaseModel):
+class DimeNetPlusPlusWrap(DimeNetPlusPlus):
     def __init__(
         self,
         num_atoms,
@@ -366,7 +357,6 @@ class DimeNetPlusPlusWrap(DimeNetPlusPlus, BaseModel):
         self.use_pbc = use_pbc
         self.cutoff = cutoff
         self.otf_graph = otf_graph
-        self.max_neighbors = 50
 
         super(DimeNetPlusPlusWrap, self).__init__(
             hidden_channels=hidden_channels,
@@ -388,24 +378,37 @@ class DimeNetPlusPlusWrap(DimeNetPlusPlus, BaseModel):
     def _forward(self, data):
         pos = data.pos
         batch = data.batch
-        (
-            edge_index,
-            dist,
-            _,
-            cell_offsets,
-            offsets,
-            neighbors,
-        ) = self.generate_graph(data)
 
-        data.edge_index = edge_index
-        data.cell_offsets = cell_offsets
-        data.neighbors = neighbors
-        j, i = edge_index
+        if self.otf_graph:
+            edge_index, cell_offsets, neighbors = radius_graph_pbc(
+                data, self.cutoff, 50, data.pos.device
+            )
+            data.edge_index = edge_index
+            data.cell_offsets = cell_offsets
+            data.neighbors = neighbors
+
+        if self.use_pbc:
+            out = get_pbc_distances(
+                pos,
+                data.edge_index,
+                data.cell,
+                data.cell_offsets,
+                data.neighbors,
+                return_offsets=True,
+            )
+
+            edge_index = out["edge_index"]
+            dist = out["distances"]
+            offsets = out["offsets"]
+
+            j, i = edge_index
+        else:
+            edge_index = radius_graph(pos, r=self.cutoff, batch=batch)
+            j, i = edge_index
+            dist = (pos[i] - pos[j]).pow(2).sum(dim=-1).sqrt()
 
         _, _, idx_i, idx_j, idx_k, idx_kj, idx_ji = self.triplets(
-            edge_index,
-            data.cell_offsets,
-            num_nodes=data.atomic_numbers.size(0),
+            edge_index, num_nodes=data.atomic_numbers.size(0)
         )
 
         # Calculate angles.

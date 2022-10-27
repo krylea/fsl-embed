@@ -3,17 +3,31 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+__all__ = [
+    "BaseModel",
+    "CGCNN",
+    "DimeNet",
+    "DimeNetPlusPlus",
+    "SchNet",
+    "ForceNet",
+]
+
 from .base import BaseModel
 from .cgcnn import CGCNN
 from .dimenet import DimeNetWrap as DimeNet
 from .dimenet_plus_plus import DimeNetPlusPlusWrap as DimeNetPlusPlus
 from .forcenet import ForceNet
-from .gemnet.gemnet import GemNetT
-from .gemnet_gp.gemnet import GraphParallelGemNetT as GraphParallelGemNetT
-from .gemnet_oc.gemnet_oc import GemNetOC
-from .painn.painn import PaiNN
 from .schnet import SchNetWrap as SchNet
-from .scn.scn import SphericalChannelNetwork
-from .spinconv import spinconv
+from .gemnet.gemnet import GemNetT
 
-from .models_sym import DimeNetPlusPlusSymbolic
+DimeNet.__module__ = __name__
+DimeNet.__name__ = "DimeNet"
+
+DimeNetPlusPlus.__module__ = __name__
+DimeNetPlusPlus.__name__ = "DimeNetPlusPlus"
+
+SchNet.__module__ = __name__
+SchNet.__name__ = "SchNet"
+
+ForceNet.__module__ = __name__
+ForceNet.__name__ = "ForceNet"

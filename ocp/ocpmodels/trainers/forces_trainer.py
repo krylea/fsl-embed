@@ -7,23 +7,22 @@ LICENSE file in the root directory of this source tree.
 
 import logging
 import os
-import pathlib
 from collections import defaultdict
-from pathlib import Path
 
 import numpy as np
 import torch
 import torch_geometric
+from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
 from ocpmodels.common import distutils
+from ocpmodels.common.data_parallel import ParallelCollater
 from ocpmodels.common.registry import registry
 from ocpmodels.common.relaxation.ml_relaxation import ml_relax
-from ocpmodels.common.utils import check_traj_files
+from ocpmodels.common.utils import plot_histogram
 from ocpmodels.modules.evaluator import Evaluator
 from ocpmodels.modules.normalizer import Normalizer
 from ocpmodels.trainers.base_trainer import BaseTrainer
-from ocpmodels.modules.scaling.util import ensure_fitted
 
 
 @registry.register_trainer("forces")
@@ -47,6 +46,8 @@ class ForcesTrainer(BaseTrainer):
         run_dir (str, optional): Path to the run directory where logs are to be saved.
             (default: :obj:`None`)
         is_debug (bool, optional): Run in debug mode.
+            (default: :obj:`False`)
+        is_vis (bool, optional): Run in debug mode.
             (default: :obj:`False`)
         is_hpo (bool, optional): Run hyperparameter optimization with Ray Tune.
             (default: :obj:`False`)
@@ -75,6 +76,7 @@ class ForcesTrainer(BaseTrainer):
         timestamp_id=None,
         run_dir=None,
         is_debug=False,
+        is_vis=False,
         is_hpo=False,
         print_every=100,
         seed=None,
@@ -83,7 +85,6 @@ class ForcesTrainer(BaseTrainer):
         amp=False,
         cpu=False,
         slurm={},
-        noddp=False,
     ):
         super().__init__(
             task=task,
@@ -95,6 +96,7 @@ class ForcesTrainer(BaseTrainer):
             timestamp_id=timestamp_id,
             run_dir=run_dir,
             is_debug=is_debug,
+            is_vis=is_vis,
             is_hpo=is_hpo,
             print_every=print_every,
             seed=seed,
@@ -104,29 +106,116 @@ class ForcesTrainer(BaseTrainer):
             cpu=cpu,
             name="s2ef",
             slurm=slurm,
-            noddp=noddp,
         )
 
     def load_task(self):
         logging.info(f"Loading dataset: {self.config['task']['dataset']}")
 
+        self.parallel_collater = ParallelCollater(
+            1 if not self.cpu else 0,
+            self.config["model_attributes"].get("otf_graph", False),
+        )
+        if self.config["task"]["dataset"] == "trajectory_lmdb":
+            self.train_loader = self.val_loader = self.test_loader = None
+            if self.config.get("dataset", None):
+                self.train_dataset = registry.get_dataset_class(
+                    self.config["task"]["dataset"]
+                )(self.config["dataset"])
+
+                self.train_sampler = DistributedSampler(
+                    self.train_dataset,
+                    num_replicas=distutils.get_world_size(),
+                    rank=distutils.get_rank(),
+                    shuffle=True,
+                )
+
+                self.train_loader = DataLoader(
+                    self.train_dataset,
+                    batch_size=self.config["optim"]["batch_size"],
+                    collate_fn=self.parallel_collater,
+                    num_workers=self.config["optim"]["num_workers"],
+                    pin_memory=True,
+                    sampler=self.train_sampler,
+                )
+
+            if self.config.get("val_dataset", None):
+                self.val_dataset = registry.get_dataset_class(
+                    self.config["task"]["dataset"]
+                )(self.config["val_dataset"])
+                self.val_sampler = DistributedSampler(
+                    self.val_dataset,
+                    num_replicas=distutils.get_world_size(),
+                    rank=distutils.get_rank(),
+                    shuffle=False,
+                )
+                self.val_loader = DataLoader(
+                    self.val_dataset,
+                    self.config["optim"].get("eval_batch_size", 64),
+                    collate_fn=self.parallel_collater,
+                    num_workers=self.config["optim"]["num_workers"],
+                    pin_memory=True,
+                    sampler=self.val_sampler,
+                )
+            if self.config.get("test_dataset", None):
+                self.test_dataset = registry.get_dataset_class(
+                    self.config["task"]["dataset"]
+                )(self.config["test_dataset"])
+                self.test_sampler = DistributedSampler(
+                    self.test_dataset,
+                    num_replicas=distutils.get_world_size(),
+                    rank=distutils.get_rank(),
+                    shuffle=False,
+                )
+                self.test_loader = DataLoader(
+                    self.test_dataset,
+                    self.config["optim"].get("eval_batch_size", 64),
+                    collate_fn=self.parallel_collater,
+                    num_workers=self.config["optim"]["num_workers"],
+                    pin_memory=True,
+                    sampler=self.test_sampler,
+                )
+
         if "relax_dataset" in self.config["task"]:
-            self.relax_dataset = registry.get_dataset_class("lmdb")(
-                self.config["task"]["relax_dataset"]
-            )
-            self.relax_sampler = self.get_sampler(
+            assert os.path.isfile(self.config["task"]["relax_dataset"]["src"])
+
+            self.relax_dataset = registry.get_dataset_class(
+                "single_point_lmdb"
+            )(self.config["task"]["relax_dataset"])
+
+            self.relax_sampler = DistributedSampler(
                 self.relax_dataset,
-                self.config["optim"].get(
-                    "eval_batch_size", self.config["optim"]["batch_size"]
-                ),
+                num_replicas=distutils.get_world_size(),
+                rank=distutils.get_rank(),
                 shuffle=False,
             )
-            self.relax_loader = self.get_dataloader(
+            self.relax_loader = DataLoader(
                 self.relax_dataset,
-                self.relax_sampler,
+                batch_size=self.config["optim"].get("eval_batch_size", 64),
+                collate_fn=self.parallel_collater,
+                num_workers=self.config["optim"]["num_workers"],
+                pin_memory=True,
+                sampler=self.relax_sampler,
             )
 
         self.num_targets = 1
+
+        # Normalizer for the dataset.
+        # Compute mean, std of training set labels.
+        self.normalizers = {}
+        if self.normalizer.get("normalize_labels", False):
+            if "target_mean" in self.normalizer:
+                self.normalizers["target"] = Normalizer(
+                    mean=self.normalizer["target_mean"],
+                    std=self.normalizer["target_std"],
+                    device=self.device,
+                )
+            else:
+                self.normalizers["target"] = Normalizer(
+                    tensor=self.train_loader.dataset.data.y[
+                        self.train_loader.dataset.__indices__
+                    ],
+                    device=self.device,
+                )
 
         # If we're computing gradients wrt input, set mean of normalizer to 0 --
         # since it is lost when compute dy / dx -- and std to forward target std
@@ -147,6 +236,34 @@ class ForcesTrainer(BaseTrainer):
                     )
                     self.normalizers["grad_target"].mean.fill_(0)
 
+        if (
+            self.is_vis
+            and self.config["task"]["dataset"] != "qm9"
+            and distutils.is_master()
+        ):
+            # Plot label distribution.
+            plots = [
+                plot_histogram(
+                    self.train_loader.dataset.data.y.tolist(),
+                    xlabel="{}/raw".format(self.config["task"]["labels"][0]),
+                    ylabel="# Examples",
+                    title="Split: train",
+                ),
+                plot_histogram(
+                    self.val_loader.dataset.data.y.tolist(),
+                    xlabel="{}/raw".format(self.config["task"]["labels"][0]),
+                    ylabel="# Examples",
+                    title="Split: val",
+                ),
+                plot_histogram(
+                    self.test_loader.dataset.data.y.tolist(),
+                    xlabel="{}/raw".format(self.config["task"]["labels"][0]),
+                    ylabel="# Examples",
+                    title="Split: test",
+                ),
+            ]
+            self.logger.log_plots(plots)
+
     # Takes in a new data source and generates predictions on it.
     @torch.no_grad()
     def predict(
@@ -156,8 +273,6 @@ class ForcesTrainer(BaseTrainer):
         results_file=None,
         disable_tqdm=False,
     ):
-        ensure_fitted(self._unwrapped_model)
-
         if distutils.is_master() and not disable_tqdm:
             logging.info("Predicting on test.")
         assert isinstance(
@@ -243,8 +358,6 @@ class ForcesTrainer(BaseTrainer):
             else:
                 predictions["energy"] = out["energy"].detach()
                 predictions["forces"] = out["forces"].detach()
-                if self.ema:
-                    self.ema.restore()
                 return predictions
 
         predictions["forces"] = np.array(predictions["forces"])
@@ -269,10 +382,7 @@ class ForcesTrainer(BaseTrainer):
         if (
             "mae" in primary_metric
             and val_metrics[primary_metric]["metric"] < self.best_val_metric
-        ) or (
-            "mae" not in primary_metric
-            and val_metrics[primary_metric]["metric"] > self.best_val_metric
-        ):
+        ) or (val_metrics[primary_metric]["metric"] > self.best_val_metric):
             self.best_val_metric = val_metrics[primary_metric]["metric"]
             self.save(
                 metrics=val_metrics,
@@ -287,8 +397,6 @@ class ForcesTrainer(BaseTrainer):
                 )
 
     def train(self, disable_eval_tqdm=False):
-        ensure_fitted(self._unwrapped_model, warn=True)
-
         eval_every = self.config["optim"].get(
             "eval_every", len(self.train_loader)
         )
@@ -298,13 +406,8 @@ class ForcesTrainer(BaseTrainer):
         primary_metric = self.config["task"].get(
             "primary_metric", self.evaluator.task_primary_metric[self.name]
         )
-        if (
-            not hasattr(self, "primary_metric")
-            or self.primary_metric != primary_metric
-        ):
-            self.best_val_metric = 1e9 if "mae" in primary_metric else -1.0
-        else:
-            primary_metric = self.primary_metric
+        self.best_val_metric = 1e9 if "mae" in primary_metric else -1.0
+        iters = 0
         self.metrics = {}
 
         # Calculate start_epoch from step instead of loading the epoch number
@@ -372,16 +475,14 @@ class ForcesTrainer(BaseTrainer):
                         split="train",
                     )
 
-                if (
-                    checkpoint_every != -1
-                    and self.step % checkpoint_every == 0
-                ):
+                iters += 1
+                if checkpoint_every != -1 and iters % checkpoint_every == 0:
                     self.save(
                         checkpoint_file="checkpoint.pt", training_state=True
                     )
 
                 # Evaluate on val set every `eval_every` iterations.
-                if self.step % eval_every == 0:
+                if iters % eval_every == 0:
                     if self.val_loader is not None:
                         val_metrics = self.validate(
                             split="val",
@@ -400,16 +501,11 @@ class ForcesTrainer(BaseTrainer):
                                 val_metrics,
                             )
 
-                    if self.config["task"].get("eval_relaxations", False):
-                        if "relax_dataset" not in self.config["task"]:
-                            logging.warning(
-                                "Cannot evaluate relaxations, relax_dataset not specified"
-                            )
-                        else:
-                            self.run_relaxations()
+                    else:
+                        self.save(self.epoch, self.step, self.metrics)
 
                 if self.scheduler.scheduler_type == "ReduceLROnPlateau":
-                    if self.step % eval_every == 0:
+                    if iters % eval_every == 0:
                         self.scheduler.step(
                             metrics=val_metrics[primary_metric]["metric"],
                         )
@@ -422,9 +518,9 @@ class ForcesTrainer(BaseTrainer):
                 self.save(checkpoint_file="checkpoint.pt", training_state=True)
 
         self.train_dataset.close_db()
-        if self.config.get("val_dataset", False):
+        if "val_dataset" in self.config:
             self.val_dataset.close_db()
-        if self.config.get("test_dataset", False):
+        if "test_dataset" in self.config:
             self.test_dataset.close_db()
 
     def _forward(self, batch_list):
@@ -512,41 +608,17 @@ class ForcesTrainer(BaseTrainer):
                         [batch.fixed.to(self.device) for batch in batch_list]
                     )
                     mask = fixed == 0
-                    if (
-                        self.config["optim"]
-                        .get("loss_force", "mae")
-                        .startswith("atomwise")
-                    ):
-                        force_mult = self.config["optim"].get(
-                            "force_coefficient", 1
+                    loss.append(
+                        force_mult
+                        * self.loss_fn["force"](
+                            out["forces"][mask], force_target[mask]
                         )
-                        natoms = torch.cat(
-                            [
-                                batch.natoms.to(self.device)
-                                for batch in batch_list
-                            ]
-                        )
-                        natoms = torch.repeat_interleave(natoms, natoms)
-                        force_loss = force_mult * self.loss_fn["force"](
-                            out["forces"][mask],
-                            force_target[mask],
-                            natoms=natoms[mask],
-                            batch_size=batch_list[0].natoms.shape[0],
-                        )
-                        loss.append(force_loss)
-                    else:
-                        loss.append(
-                            force_mult
-                            * self.loss_fn["force"](
-                                out["forces"][mask], force_target[mask]
-                            )
-                        )
+                    )
                 else:
                     loss.append(
                         force_mult
                         * self.loss_fn["force"](out["forces"], force_target)
                     )
-
         # Sanity check to make sure the compute graph is correct.
         for lc in loss:
             assert hasattr(lc, "grad_fn")
@@ -599,25 +671,16 @@ class ForcesTrainer(BaseTrainer):
         return metrics
 
     def run_relaxations(self, split="val"):
-        ensure_fitted(self._unwrapped_model)
-
         logging.info("Running ML-relaxations")
         self.model.eval()
         if self.ema:
             self.ema.store()
             self.ema.copy_to()
 
-        evaluator_is2rs, metrics_is2rs = Evaluator(task="is2rs"), {}
-        evaluator_is2re, metrics_is2re = Evaluator(task="is2re"), {}
+        evaluator, metrics = Evaluator(task="is2rs"), {}
 
-        # Need both `pos_relaxed` and `y_relaxed` to compute val IS2R* metrics.
-        # Else just generate predictions.
-        if (
-            hasattr(self.relax_dataset[0], "pos_relaxed")
-            and self.relax_dataset[0].pos_relaxed is not None
-        ) and (
-            hasattr(self.relax_dataset[0], "y_relaxed")
-            and self.relax_dataset[0].y_relaxed is not None
+        if hasattr(self.relax_dataset[0], "pos_relaxed") and hasattr(
+            self.relax_dataset[0], "y_relaxed"
         ):
             split = "val"
         else:
@@ -629,15 +692,8 @@ class ForcesTrainer(BaseTrainer):
         for i, batch in tqdm(
             enumerate(self.relax_loader), total=len(self.relax_loader)
         ):
-            if i >= self.config["task"].get("num_relaxation_batches", 1e9):
+            if i >= self.config["task"].get("num_relaxations", 1e9):
                 break
-
-            # If all traj files already exist, then skip this batch
-            if check_traj_files(
-                batch, self.config["task"]["relax_opt"].get("traj_dir", None)
-            ):
-                logging.info(f"Skipping batch: {batch[0].sid.tolist()}")
-                continue
 
             relaxed_batch = ml_relax(
                 batch=batch,
@@ -685,16 +741,7 @@ class ForcesTrainer(BaseTrainer):
                     "natoms": torch.LongTensor(natoms_free),
                 }
 
-                metrics_is2rs = evaluator_is2rs.eval(
-                    prediction,
-                    target,
-                    metrics_is2rs,
-                )
-                metrics_is2re = evaluator_is2re.eval(
-                    {"energy": prediction["energy"]},
-                    {"energy": target["energy"]},
-                    metrics_is2re,
-                )
+                metrics = evaluator.eval(prediction, target, metrics)
 
         if self.config["task"].get("write_pos", False):
             rank = distutils.get_rank()
@@ -746,41 +793,33 @@ class ForcesTrainer(BaseTrainer):
                 np.savez_compressed(full_path, **gather_results)
 
         if split == "val":
-            for task in ["is2rs", "is2re"]:
-                metrics = eval(f"metrics_{task}")
-                aggregated_metrics = {}
-                for k in metrics:
-                    aggregated_metrics[k] = {
-                        "total": distutils.all_reduce(
-                            metrics[k]["total"],
-                            average=False,
-                            device=self.device,
-                        ),
-                        "numel": distutils.all_reduce(
-                            metrics[k]["numel"],
-                            average=False,
-                            device=self.device,
-                        ),
-                    }
-                    aggregated_metrics[k]["metric"] = (
-                        aggregated_metrics[k]["total"]
-                        / aggregated_metrics[k]["numel"]
-                    )
-                metrics = aggregated_metrics
-
-                # Make plots.
-                log_dict = {
-                    f"{task}_{k}": metrics[k]["metric"] for k in metrics
+            aggregated_metrics = {}
+            for k in metrics:
+                aggregated_metrics[k] = {
+                    "total": distutils.all_reduce(
+                        metrics[k]["total"], average=False, device=self.device
+                    ),
+                    "numel": distutils.all_reduce(
+                        metrics[k]["numel"], average=False, device=self.device
+                    ),
                 }
-                if self.logger is not None:
-                    self.logger.log(
-                        log_dict,
-                        step=self.step,
-                        split=split,
-                    )
+                aggregated_metrics[k]["metric"] = (
+                    aggregated_metrics[k]["total"]
+                    / aggregated_metrics[k]["numel"]
+                )
+            metrics = aggregated_metrics
 
-                if distutils.is_master():
-                    logging.info(metrics)
+            # Make plots.
+            log_dict = {k: metrics[k]["metric"] for k in metrics}
+            if self.logger is not None:
+                self.logger.log(
+                    log_dict,
+                    step=self.step,
+                    split=split,
+                )
+
+            if distutils.is_master():
+                logging.info(metrics)
 
         if self.ema:
             self.ema.restore()
